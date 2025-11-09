@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:supabase-types": "npx supabase gen types typescript --project-id lyscmnfwrgrodebzkmoo > types/supabase.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.29",
