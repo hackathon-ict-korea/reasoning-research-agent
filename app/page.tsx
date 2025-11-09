@@ -1,7 +1,9 @@
 "use client";
 
+import Loading from "@/components/loading";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
+import { cn } from "@/lib/utils";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 const MAX_CYCLES = 3;
@@ -27,10 +29,27 @@ export default function Home() {
   } = useSynthesizer();
   const synthesizerKeysRef = useRef<Record<number, string>>({});
 
+  const [isMessageSent, setIsMessageSent] = useState<boolean>(false);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsMessageSent(true);
+    console.log("conversation", conversation);
+    // call summarize api(/summarize) and use respond as conversation param
+    const summarizeResponse = await fetch("/api/summarize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "user", parts: [{ type: "text", text: conversation }] },
+        ],
+      }),
+    });
 
-    const normalizedConversation = conversation.trim();
+    const normalizedConversation = (await summarizeResponse.json()).text;
+
     if (normalizedConversation.length === 0) {
       return;
     }
@@ -216,35 +235,41 @@ export default function Home() {
           with their own analysis and confidence score.
         </p>
       </header>
-
-      <form
-        onSubmit={handleSubmit}
-        className="w-full space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-      >
-        <label htmlFor="conversation" className="block text-sm font-medium">
-          Conversation
-        </label>
-        <textarea
-          id="conversation"
-          value={conversation}
-          onChange={(event) => setConversation(event.target.value)}
-          placeholder="Summarized discussion or bullet list of findings..."
-          className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
-          required
-        />
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={isResearchLoading}
-            className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {isResearchLoading ? "Generating…" : "Run Researchers"}
-          </button>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            Conversation stays in the browser until you submit.
-          </span>
-        </div>
-      </form>
+      {isMessageSent && synthesizerLoadingCycle === null ? (
+        <Loading />
+      ) : (
+        <form
+          onSubmit={handleSubmit}
+          className={cn(
+            "w-full space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950",
+            isMessageSent ? "hidden" : ""
+          )}
+        >
+          <label htmlFor="conversation" className="block text-sm font-medium">
+            Conversation
+          </label>
+          <textarea
+            id="conversation"
+            value={conversation}
+            onChange={(event) => setConversation(event.target.value)}
+            placeholder="Summarized discussion or bullet list of findings..."
+            className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
+            required
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={isResearchLoading}
+              className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              {isResearchLoading ? "Generating…" : "Run Researchers"}
+            </button>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              Conversation stays in the browser until you submit.
+            </span>
+          </div>
+        </form>
+      )}
 
       {researcherError ? (
         <div className="w-full rounded-lg border border-red-300 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
