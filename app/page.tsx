@@ -5,6 +5,7 @@ import FileUpload, {
   AttachedFile,
   AttachedFilesList,
 } from "@/components/file-upload";
+import TextType from "@/components/text-type";
 import { Spinner } from "@/components/ui/spinner";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
@@ -619,9 +620,15 @@ export default function Home() {
           Synthesizer error: {initialClarifierError}
         </p>
       ) : isSynthesizerClarifying ? (
-        <p className="text-sm text-indigo-700 dark:text-indigo-200">
-          Synthesizer is analyzing the question…
-        </p>
+        <TextType
+          text="Synthesizer is analyzing the question…"
+          typingSpeed={75}
+          pauseDuration={1500}
+          showCursor={true}
+          cursorCharacter="|"
+          loop={false}
+          className="text-sm text-indigo-700 dark:text-indigo-200"
+        />
       ) : initialClarifier ? (
         <div className="space-y-4 text-sm leading-6">
           <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
@@ -674,9 +681,7 @@ export default function Home() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">
-              {isFollowUpCycle
-                ? `Follow-up Analysis`
-                : "Primary Analysis"}
+              {isFollowUpCycle ? `Follow-up Analysis` : "Primary Analysis"}
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Compare researcher responses and Synthesizer summaries in one
@@ -717,6 +722,18 @@ export default function Home() {
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <h3
+                        className={cn(
+                          "text-lg font-bold capitalize",
+                          colors.label
+                        )}
+                      >
+                        {entry.result.researcherId.slice(0, -1) +
+                          " " +
+                          entry.result.researcherId.slice(-1)}
+                      </h3>
+                    </div>
                     <span
                       className={cn(
                         "text-xs font-medium uppercase",
@@ -725,16 +742,6 @@ export default function Home() {
                     >
                       {label}
                     </span>
-                    <div className="flex items-center gap-3">
-                      <h3
-                        className={cn(
-                          "text-lg font-bold capitalize",
-                          colors.label
-                        )}
-                      >
-                        {entry.result.researcherId}
-                      </h3>
-                    </div>
                   </div>
                   <p
                     className={cn(
