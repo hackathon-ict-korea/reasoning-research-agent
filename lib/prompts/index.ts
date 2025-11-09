@@ -1,7 +1,7 @@
 // Prompts Module Entry Point
 
-import { getSummarizerPrompt } from "./personas/summarizer";
-import { getSynthesizerPrompt } from "./personas/synthesizer";
 import { getReviewerPrompt } from "./personas/reviewer";
+import { getSynthesizerPrompt } from "./personas/synthesizer";
+import { getResearcherPrompt } from "./personas/researcher";
 
-export type AgentType = "summarizer" | "synthesizer" | "reviewer";
+export type AgentType = "reviewer" | "synthesizer" | "researcher";
