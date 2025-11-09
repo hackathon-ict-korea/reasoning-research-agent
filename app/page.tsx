@@ -165,6 +165,22 @@ export default function Home() {
     synthesizerLoadingCycle,
   ]);
 
+  useEffect(() => {
+    if (
+      isMessageSent &&
+      !isResearchLoading &&
+      !isSynthesizerClarifying &&
+      synthesizerLoadingCycle === null
+    ) {
+      setIsMessageSent(false);
+    }
+  }, [
+    isMessageSent,
+    isResearchLoading,
+    isSynthesizerClarifying,
+    synthesizerLoadingCycle,
+  ]);
+
   function handleStartFollowUpCycle(currentCycle: number) {
     const nextCycle = currentCycle + 1;
 
@@ -243,7 +259,10 @@ export default function Home() {
           with their own analysis and confidence score.
         </p>
       </header>
-      {isMessageSent && synthesizerLoadingCycle === null ? (
+      {isMessageSent &&
+      (isResearchLoading ||
+        isSynthesizerClarifying ||
+        synthesizerLoadingCycle !== null) ? (
         <Loading />
       ) : (
         <form
