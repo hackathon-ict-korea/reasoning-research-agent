@@ -120,31 +120,23 @@ function mergeProviderOptions(
 }
 
 function parseResearcherResponse(rawText: string, researcherId: ResearcherId) {
+  const normalized = normalizeJsonFence(rawText);
+
   try {
-    const payload = JSON.parse(normalizeJsonFence(rawText)) as {
-      confidence_score: unknown;
-      answer: unknown;
-    };
-
-    if (typeof payload.answer !== "string") {
-      throw new Error("`answer` must be a string.");
+    return coerceResearcherPayload(JSON.parse(normalized));
+  } catch (initialError) {
+    try {
+      const repaired = repairJsonString(normalized);
+      return coerceResearcherPayload(JSON.parse(repaired));
+    } catch {
+      throw new Error(
+        `Failed to parse researcher response (${researcherId}): ${
+          initialError instanceof Error
+            ? initialError.message
+            : String(initialError)
+        }\nRaw text: ${rawText}`
+      );
     }
-
-    const confidenceScore = Number(payload.confidence_score);
-    if (!Number.isFinite(confidenceScore)) {
-      throw new Error("`confidence_score` must be a finite number.");
-    }
-
-    return {
-      answer: payload.answer,
-      confidenceScore,
-    };
-  } catch (error) {
-    throw new Error(
-      `Failed to parse researcher response (${researcherId}): ${
-        error instanceof Error ? error.message : String(error)
-      }\nRaw text: ${rawText}`
-    );
   }
 }
 
@@ -158,4 +150,63 @@ function normalizeJsonFence(input: string): string {
   }
 
   return trimmed;
+}
+
+function repairJsonString(input: string): string {
+  const answerKeyIndex = input.indexOf(`"answer"`);
+  if (answerKeyIndex === -1) {
+    return input;
+  }
+
+  const colonIndex = input.indexOf(":", answerKeyIndex);
+  if (colonIndex === -1) {
+    return input;
+  }
+
+  const valueStartIndex = input.indexOf(`"`, colonIndex);
+  if (valueStartIndex === -1) {
+    return input;
+  }
+
+  const valueEndIndex = input.lastIndexOf(`"`);
+  if (valueEndIndex === -1 || valueEndIndex <= valueStartIndex) {
+    return input;
+  }
+
+  const answerValue = input.slice(valueStartIndex + 1, valueEndIndex);
+  const sanitizedAnswer = JSON.stringify(answerValue);
+
+  return (
+    input.slice(0, valueStartIndex) +
+    sanitizedAnswer +
+    input.slice(valueEndIndex + 1)
+  );
+}
+
+function coerceResearcherPayload(raw: unknown) {
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    !("answer" in raw) ||
+    !("confidence_score" in raw)
+  ) {
+    throw new Error("Response must contain `answer` and `confidence_score`.");
+  }
+
+  const answer = (raw as { answer: unknown }).answer;
+  if (typeof answer !== "string") {
+    throw new Error("`answer` must be a string.");
+  }
+
+  const confidenceValue = (raw as { confidence_score: unknown })
+    .confidence_score;
+  const confidenceScore = Number(confidenceValue);
+  if (!Number.isFinite(confidenceScore)) {
+    throw new Error("`confidence_score` must be a finite number.");
+  }
+
+  return {
+    answer,
+    confidenceScore,
+  };
 }

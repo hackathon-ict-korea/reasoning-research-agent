@@ -176,11 +176,70 @@ function safeParseSynthesizerPayload(input: string): SynthesizerPayload {
 }
 
 function repairSynthesizerJson(input: string): string {
-  let output = input;
+  const escapedQuotes = escapeInnerQuotes(input);
+  if (escapedQuotes !== input) {
+    return escapedQuotes;
+  }
 
-  output = output.replace(/("detail"\s*:\s*"[^"]*")\s*,\s*{/g, "$1 }, {");
+  return input.replace(/("detail"\s*:\s*"[^"]*")\s*,\s*{/g, "$1 }, {");
+}
 
-  return output;
+function escapeInnerQuotes(input: string): string {
+  let insideString = false;
+  let result = "";
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]!;
+    const previous = index > 0 ? input[index - 1] : undefined;
+
+    if (char === '"' && previous !== "\\") {
+      if (!insideString) {
+        insideString = true;
+        result += char;
+        continue;
+      }
+
+      const nextNonWhitespaceIndex = findNextNonWhitespaceIndex(
+        input,
+        index + 1
+      );
+      const nextChar =
+        nextNonWhitespaceIndex !== null ? input[nextNonWhitespaceIndex] : null;
+
+      if (
+        nextChar !== null &&
+        nextChar !== "," &&
+        nextChar !== "}" &&
+        nextChar !== "]" &&
+        nextChar !== "\n" &&
+        nextChar !== "\r"
+      ) {
+        result += '\\"';
+        continue;
+      }
+
+      insideString = false;
+      result += char;
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
+function findNextNonWhitespaceIndex(
+  input: string,
+  start: number
+): number | null {
+  for (let index = start; index < input.length; index++) {
+    const char = input[index]!;
+    if (char.trim() !== "") {
+      return index;
+    }
+  }
+  return null;
 }
 
 function createParseError(error: unknown, rawText: string) {
