@@ -19,16 +19,20 @@ export type SynthesizerResult = {
   rawText?: string;
 };
 
+export type SynthesizerMode = "clarify" | "synthesis";
+
 export type SynthesizerFulfilledResponse = {
   status: "fulfilled";
   result: SynthesizerResult;
   cycle?: number;
+  mode?: SynthesizerMode;
 };
 
 export type SynthesizerRejectedResponse = {
   status: "rejected";
   error: string;
   cycle?: number;
+  mode?: SynthesizerMode;
 };
 
 export type SynthesizerApiResponse =
@@ -37,6 +41,7 @@ export type SynthesizerApiResponse =
 
 export type SynthesizerRequestBody = {
   conversation: string;
-  researcherResponses: ResearcherSynthesisInput[];
+  researcherResponses?: ResearcherSynthesisInput[];
   cycle?: number;
+  mode?: SynthesizerMode;
 };

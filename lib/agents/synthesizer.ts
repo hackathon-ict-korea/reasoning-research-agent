@@ -1,7 +1,10 @@
 import { generateText } from "ai";
 
 import { defaultGoogleProviderOptions, geminiFlash } from "../clients/google";
-import { getSynthesizerPrompt } from "../prompts";
+import {
+  getSynthesizerClarifierPrompt,
+  getSynthesizerPrompt,
+} from "../prompts";
 import type {
   ResearcherSynthesisInput,
   SynthesizerResult,
@@ -17,6 +20,11 @@ export type SynthesizerAgentArgs = {
   providerOptions?: ProviderOptions;
 };
 
+export type SynthesizerClarifierAgentArgs = {
+  conversation: string;
+  providerOptions?: ProviderOptions;
+};
+
 export async function runSynthesizerAgent({
   conversation,
   researcherResponses,
@@ -26,6 +34,26 @@ export async function runSynthesizerAgent({
     conversation,
     JSON.stringify(researcherResponses, null, 2)
   );
+
+  const mergedProviderOptions = mergeProviderOptions(
+    defaultGoogleProviderOptions,
+    providerOptions
+  );
+
+  const { text } = await generateText({
+    model: geminiFlash,
+    prompt,
+    providerOptions: mergedProviderOptions,
+  });
+
+  return parseSynthesizerResponse(text);
+}
+
+export async function runSynthesizerClarifierAgent({
+  conversation,
+  providerOptions,
+}: SynthesizerClarifierAgentArgs): Promise<SynthesizerResult> {
+  const prompt = getSynthesizerClarifierPrompt(conversation);
 
   const mergedProviderOptions = mergeProviderOptions(
     defaultGoogleProviderOptions,
