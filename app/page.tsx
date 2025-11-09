@@ -5,6 +5,7 @@ import FileUpload, {
   AttachedFile,
   AttachedFilesList,
 } from "@/components/file-upload";
+import { Spinner } from "@/components/ui/spinner";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
 import { cn, parseMarkdown } from "@/lib/utils";
@@ -54,36 +55,6 @@ const RESEARCHER_COLORS: Record<
     border: "border-emerald-200 dark:border-emerald-700",
     text: "text-emerald-900 dark:text-emerald-100",
     label: "text-emerald-500 dark:text-emerald-400",
-  },
-  researcherD: {
-    bg: "bg-purple-50 dark:bg-purple-900/30",
-    border: "border-purple-200 dark:border-purple-700",
-    text: "text-purple-900 dark:text-purple-100",
-    label: "text-purple-500 dark:text-purple-400",
-  },
-  researcherE: {
-    bg: "bg-amber-50 dark:bg-amber-900/30",
-    border: "border-amber-200 dark:border-amber-700",
-    text: "text-amber-900 dark:text-amber-100",
-    label: "text-amber-500 dark:text-amber-400",
-  },
-  researcherF: {
-    bg: "bg-teal-50 dark:bg-teal-900/30",
-    border: "border-teal-200 dark:border-teal-700",
-    text: "text-teal-900 dark:text-teal-100",
-    label: "text-teal-500 dark:text-teal-400",
-  },
-  researcherG: {
-    bg: "bg-pink-50 dark:bg-pink-900/30",
-    border: "border-pink-200 dark:border-pink-700",
-    text: "text-pink-900 dark:text-pink-100",
-    label: "text-pink-500 dark:text-pink-400",
-  },
-  researcherH: {
-    bg: "bg-cyan-50 dark:bg-cyan-900/30",
-    border: "border-cyan-200 dark:border-cyan-700",
-    text: "text-cyan-900 dark:text-cyan-100",
-    label: "text-cyan-500 dark:text-cyan-400",
   },
 };
 
@@ -160,6 +131,7 @@ export default function Home() {
 
   const [viewMode, setViewMode] = useState<"focus" | "timeline">("focus");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [isSubmissionPending, setIsSubmissionPending] = useState(false);
 
   function handleFilesAdded(newFiles: AttachedFile[]) {
     setAttachedFiles((prev) => [...prev, ...newFiles]);
@@ -171,11 +143,17 @@ export default function Home() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isSubmissionPending || isProcessing) {
+      return;
+    }
     const submittedConversation = visibleConversation.trim();
 
     if (submittedConversation.length === 0 && attachedFiles.length === 0) {
       return;
     }
+
+    setIsSubmissionPending(true);
 
     // Prepare message parts with text and files
     const parts: Array<{
@@ -200,46 +178,53 @@ export default function Home() {
       });
     });
 
-    // call summarize api(/summarize) and use respond as conversation param
-    const summarizeResponse = await fetch("/api/summarize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [{ role: "user", parts }],
-      }),
-    });
-
-    let normalizedConversation = submittedConversation;
     try {
-      const summarizeJson = await summarizeResponse.json();
-      if (typeof summarizeJson?.text === "string") {
-        normalizedConversation = summarizeJson.text.trim();
+      // call summarize api(/summarize) and use respond as conversation param
+      const summarizeResponse = await fetch("/api/summarize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [{ role: "user", parts }],
+        }),
+      });
+
+      let normalizedConversation = submittedConversation;
+      try {
+        const summarizeJson = await summarizeResponse.json();
+        if (typeof summarizeJson?.text === "string") {
+          normalizedConversation = summarizeJson.text.trim();
+        }
+      } catch (error) {
+        console.error("Failed to parse summarize response", error);
       }
+
+      if (normalizedConversation.length === 0) {
+        setIsSubmissionPending(false);
+        return;
+      }
+
+      resetResearchers();
+      resetSynthesizer();
+      synthesizerKeysRef.current = {};
+      setCycleConversations({ 1: normalizedConversation });
+      setConversation(normalizedConversation);
+      setAttachedFiles([]); // Clear attached files after submission
+
+      await runSynthesizerClarifier({
+        conversation: normalizedConversation,
+      });
+
+      runResearchers({
+        conversation: normalizedConversation,
+        cycle: 1,
+      });
+      setIsSubmissionPending(false);
     } catch (error) {
-      console.error("Failed to parse summarize response", error);
+      console.error("Failed to submit problem definition", error);
+      setIsSubmissionPending(false);
     }
-
-    if (normalizedConversation.length === 0) {
-      return;
-    }
-
-    resetResearchers();
-    resetSynthesizer();
-    synthesizerKeysRef.current = {};
-    setCycleConversations({ 1: normalizedConversation });
-    setConversation(normalizedConversation);
-    setAttachedFiles([]); // Clear attached files after submission
-
-    await runSynthesizerClarifier({
-      conversation: normalizedConversation,
-    });
-
-    runResearchers({
-      conversation: normalizedConversation,
-      cycle: 1,
-    });
   }
 
   useEffect(() => {
@@ -454,126 +439,164 @@ export default function Home() {
     isSynthesizerClarifying ||
     synthesizerLoadingCycle !== null;
 
-  const renderInputStage = () => (
-    <div className="space-y-6">
-      <form
-        onSubmit={handleSubmit}
-        className={cn(
-          "w-full space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm transition dark:border-zinc-800 dark:bg-zinc-950",
-          isProcessing ? "opacity-70" : ""
-        )}
-      >
-        <label htmlFor="conversation" className="block text-sm font-medium">
-          Conversation
-        </label>
+  const isSubmissionInFlight = isProcessing || isSubmissionPending;
 
-        <AttachedFilesList
-          attachedFiles={attachedFiles}
-          onFileRemoved={handleFileRemoved}
-        />
+  const renderInputStage = () => {
+    const primaryActionLabel = isSubmissionPending
+      ? "Preparing submission…"
+      : isSynthesizerClarifying
+      ? "Synthesizer is understanding the question…"
+      : isResearchLoading
+      ? "Generating…"
+      : "Run Researchers";
 
-        <textarea
-          id="conversation"
-          value={visibleConversation}
-          onChange={(event) => setVisibleConversation(event.target.value)}
-          placeholder="Summarized discussion or bullet list of findings..."
-          className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
-          required
-          disabled={isProcessing}
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            Conversation stays in the browser until you submit.
+    return (
+      <div className="space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className={cn(
+            "w-full space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm transition dark:border-zinc-800 dark:bg-zinc-950",
+            isSubmissionInFlight ? "opacity-70" : ""
+          )}
+        >
+          <label htmlFor="conversation" className="block text-sm font-medium">
+            Conversation
+          </label>
+
+          <AttachedFilesList
+            attachedFiles={attachedFiles}
+            onFileRemoved={handleFileRemoved}
+          />
+
+          <textarea
+            id="conversation"
+            value={visibleConversation}
+            onChange={(event) => setVisibleConversation(event.target.value)}
+            placeholder="Summarized discussion or bullet list of findings..."
+            className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
+            required
+            disabled={isSubmissionInFlight}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              Conversation stays in the browser until you submit.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={isSubmissionInFlight}
+                className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+              >
+                {isSubmissionInFlight ? (
+                  <>
+                    <Spinner
+                      size="sm"
+                      className="text-white dark:text-zinc-900"
+                      aria-hidden="true"
+                    />
+                    <span>{primaryActionLabel}</span>
+                  </>
+                ) : (
+                  primaryActionLabel
+                )}
+              </button>
+              <FileUpload onFilesAdded={handleFilesAdded} />
+            </div>
+          </div>
+        </form>
+        {researcherError ? (
+          <div className="w-full rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            {researcherError}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderTimelineInputStage = () => {
+    const timelineActionLabel = isSubmissionPending
+      ? "Preparing…"
+      : isProcessing
+      ? "Running…"
+      : "Run";
+
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+        <div className="space-y-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            Quick prompt
+          </span>
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-inner transition focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/70 dark:focus-within:border-zinc-500">
+            <textarea
+              value={visibleConversation}
+              onChange={(event) => setVisibleConversation(event.target.value)}
+              placeholder="Summarize the conversation or drop a quick hypothesis..."
+              className="h-32 w-full resize-y rounded-lg border-0 bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              required
+              disabled={isSubmissionInFlight}
+            />
+          </div>
+          {attachedFiles.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {attachedFiles.map((file, index) => (
+                <button
+                  key={`${file.name}-${index}`}
+                  type="button"
+                  onClick={() => handleFileRemoved(index)}
+                  className="group inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-xs text-zinc-600 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+                  title={`Remove ${file.name}`}
+                >
+                  <span className="max-w-[160px] truncate font-medium group-hover:text-zinc-800 dark:group-hover:text-zinc-50">
+                    {file.name}
+                  </span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="h-3.5 w-3.5 text-zinc-400 transition group-hover:text-zinc-700 dark:text-zinc-400 dark:group-hover:text-zinc-200"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18 18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            Runs the full researcher workflow with this prompt.
           </span>
           <div className="flex items-center gap-2">
             <button
               type="submit"
-              disabled={isProcessing}
-              className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+              disabled={isSubmissionInFlight}
+              className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
             >
-              {isSynthesizerClarifying
-                ? "Synthesizer is understanding the question…"
-                : isResearchLoading
-                ? "Generating…"
-                : "Run Researchers"}
+              {isSubmissionInFlight ? (
+                <>
+                  <Spinner
+                    size="sm"
+                    className="text-white dark:text-zinc-900"
+                    aria-hidden="true"
+                  />
+                  <span>{timelineActionLabel}</span>
+                </>
+              ) : (
+                timelineActionLabel
+              )}
             </button>
             <FileUpload onFilesAdded={handleFilesAdded} />
           </div>
         </div>
       </form>
-      {researcherError ? (
-        <div className="w-full rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {researcherError}
-        </div>
-      ) : null}
-    </div>
-  );
-
-  const renderTimelineInputStage = () => (
-    <form onSubmit={handleSubmit} className="space-y-4 text-sm">
-      <div className="space-y-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-          Quick prompt
-        </span>
-        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-inner transition focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/70 dark:focus-within:border-zinc-500">
-          <textarea
-            value={visibleConversation}
-            onChange={(event) => setVisibleConversation(event.target.value)}
-            placeholder="Summarize the conversation or drop a quick hypothesis..."
-            className="h-32 w-full resize-y rounded-lg border-0 bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-            required
-            disabled={isProcessing}
-          />
-        </div>
-        {attachedFiles.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {attachedFiles.map((file, index) => (
-              <button
-                key={`${file.name}-${index}`}
-                type="button"
-                onClick={() => handleFileRemoved(index)}
-                className="group inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-xs text-zinc-600 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
-                title={`Remove ${file.name}`}
-              >
-                <span className="max-w-[160px] truncate font-medium group-hover:text-zinc-800 dark:group-hover:text-zinc-50">
-                  {file.name}
-                </span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                  className="h-3.5 w-3.5 text-zinc-400 transition group-hover:text-zinc-700 dark:text-zinc-400 dark:group-hover:text-zinc-200"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18 18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-zinc-400 dark:text-zinc-500">
-          Runs the full researcher workflow with this prompt.
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {isProcessing ? "Running…" : "Run"}
-          </button>
-          <FileUpload onFilesAdded={handleFilesAdded} />
-        </div>
-      </div>
-    </form>
-  );
+    );
+  };
 
   const renderClarifierStage = () => (
     <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
