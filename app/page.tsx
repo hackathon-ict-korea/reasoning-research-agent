@@ -110,7 +110,6 @@ type TimelineHighlight = {
 
 type TimelineSynthesizer = {
   summary?: string;
-  mediatorNotes?: string;
   highlights?: TimelineHighlight[];
   followUp?: string;
   error?: string;
@@ -463,12 +462,9 @@ export default function Home() {
           isProcessing ? "opacity-70" : ""
         )}
       >
-        <div className="flex items-center justify-between">
-          <label htmlFor="conversation" className="block text-sm font-medium">
-            Conversation
-          </label>
-          <FileUpload onFilesAdded={handleFilesAdded} />
-        </div>
+        <label htmlFor="conversation" className="block text-sm font-medium">
+          Conversation
+        </label>
 
         <AttachedFilesList
           attachedFiles={attachedFiles}
@@ -484,21 +480,24 @@ export default function Home() {
           required
           disabled={isProcessing}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {isSynthesizerClarifying
-              ? "Synthesizer is understanding the question…"
-              : isResearchLoading
-              ? "Generating…"
-              : "Run Researchers"}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs text-zinc-500 dark:text-zinc-400">
             Conversation stays in the browser until you submit.
           </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              {isSynthesizerClarifying
+                ? "Synthesizer is understanding the question…"
+                : isResearchLoading
+                ? "Generating…"
+                : "Run Researchers"}
+            </button>
+            <FileUpload onFilesAdded={handleFilesAdded} />
+          </div>
         </div>
       </form>
       {researcherError ? (
@@ -512,14 +511,9 @@ export default function Home() {
   const renderTimelineInputStage = () => (
     <form onSubmit={handleSubmit} className="space-y-4 text-sm">
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-            Quick prompt
-          </span>
-          <div className="flex items-center gap-2">
-            <FileUpload onFilesAdded={handleFilesAdded} />
-          </div>
-        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+          Quick prompt
+        </span>
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-inner transition focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/70 dark:focus-within:border-zinc-500">
           <textarea
             value={visibleConversation}
@@ -566,13 +560,16 @@ export default function Home() {
         <span className="text-xs text-zinc-400 dark:text-zinc-500">
           Runs the full researcher workflow with this prompt.
         </span>
-        <button
-          type="submit"
-          disabled={isProcessing}
-          className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-        >
-          {isProcessing ? "Running…" : "Run"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={isProcessing}
+            className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            {isProcessing ? "Running…" : "Run"}
+          </button>
+          <FileUpload onFilesAdded={handleFilesAdded} />
+        </div>
       </div>
     </form>
   );
@@ -607,17 +604,6 @@ export default function Home() {
             {initialClarifier.summary}
           </p>
 
-          {initialClarifier.mediatorNotes ? (
-            <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-              <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                Reference Notes
-              </h4>
-              <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                {initialClarifier.mediatorNotes}
-              </p>
-            </div>
-          ) : null}
-
           {initialClarifier.followUpQuestion ? (
             <div className="rounded-lg border border-indigo-200 bg-white px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/60">
               <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
@@ -639,8 +625,10 @@ export default function Home() {
     const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
     const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
     const isFollowUpCycle = cycleNumber > 1;
-    const followUpQuestion =
-      synthesizerForCycle?.followUpQuestion?.trim() ?? "";
+    const isFinalCycle = cycleNumber === MAX_CYCLES;
+    const followUpQuestion = isFinalCycle
+      ? ""
+      : synthesizerForCycle?.followUpQuestion?.trim() ?? "";
     const nextCycle = cycleNumber + 1;
     const nextCycleConversation =
       nextCycle <= MAX_CYCLES ? cycleConversations[nextCycle] : undefined;
@@ -682,7 +670,7 @@ export default function Home() {
               Collecting researcher responses…
             </div>
           ) : null}
-          {cycleEntries.map((entry, entryIndex) => {
+          {cycleEntries.map((entry) => {
             const label =
               entry.phase === "initial"
                 ? `InitialResponse#${entry.phasePosition}`
@@ -800,17 +788,6 @@ export default function Home() {
                     {synthesizerForCycle.summary}
                   </p>
 
-                  {synthesizerForCycle.mediatorNotes ? (
-                    <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        Mediator Notes
-                      </h4>
-                      <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                        {synthesizerForCycle.mediatorNotes}
-                      </p>
-                    </div>
-                  ) : null}
-
                   {synthesizerForCycle.highlights &&
                   synthesizerForCycle.highlights.length > 0 ? (
                     <div>
@@ -837,20 +814,22 @@ export default function Home() {
                     </div>
                   ) : null}
 
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                      Follow-up Question
-                    </h4>
-                    {followUpQuestion.length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
-                        <span>{followUpQuestion}</span>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
-                        No follow-up question provided for this cycle.
-                      </p>
-                    )}
-                  </div>
+                  {!isFinalCycle ? (
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                        Follow-up Question
+                      </h4>
+                      {followUpQuestion.length > 0 ? (
+                        <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                          <span>{followUpQuestion}</span>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
+                          No follow-up question provided for this cycle.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
 
                   {canTriggerNextCycle ? (
                     <button
@@ -984,7 +963,7 @@ export default function Home() {
         footer = "Status: Error";
         nodeStatus = "error";
       } else if (isSynthesizerClarifying) {
-        content = "Synthesizer is interpreting the initial question…";
+        content = "Synthesizer is summarizing the submitted materials…";
         footer = "Status: In Progress";
         nodeStatus = "in-progress";
       } else if (initialClarifier) {
@@ -993,7 +972,6 @@ export default function Home() {
         nodeStatus = "done";
         synthesizerDetails = {
           summary: initialClarifier.summary.trim(),
-          mediatorNotes: initialClarifier.mediatorNotes?.trim(),
           followUp: initialClarifier.followUpQuestion?.trim(),
           loading: false,
         };
@@ -1023,7 +1001,10 @@ export default function Home() {
       const synthesizerForCycle = syntheses[cycleNumber];
       const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
       const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
-      const followUp = synthesizerForCycle?.followUpQuestion?.trim();
+      const isFinalCycle = cycleNumber === MAX_CYCLES;
+      const followUp = !isFinalCycle
+        ? synthesizerForCycle?.followUpQuestion?.trim()
+        : undefined;
 
       let cycleContent = "Cycle information is being prepared.";
       if (cycleEntries.length > 0) {
@@ -1053,7 +1034,6 @@ export default function Home() {
       }
       const synthesizerDetails: TimelineSynthesizer = {
         summary: synthesizerForCycle?.summary?.trim(),
-        mediatorNotes: synthesizerForCycle?.mediatorNotes?.trim(),
         highlights: synthesizerForCycle?.highlights?.map((highlight) => ({
           title: highlight.title,
           detail: highlight.detail,
@@ -1263,17 +1243,6 @@ export default function Home() {
                                 <p className="whitespace-pre-wrap font-medium">
                                   {node.synthesizer.summary}
                                 </p>
-                              ) : null}
-
-                              {node.synthesizer.mediatorNotes ? (
-                                <div className="space-y-1 text-xs">
-                                  <span className="font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-                                    Mediator Notes
-                                  </span>
-                                  <p className="whitespace-pre-wrap text-sm text-indigo-800 dark:text-indigo-100">
-                                    {node.synthesizer.mediatorNotes}
-                                  </p>
-                                </div>
                               ) : null}
 
                               {node.synthesizer.highlights &&
