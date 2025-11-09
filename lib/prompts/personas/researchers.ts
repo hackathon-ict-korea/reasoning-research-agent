@@ -66,18 +66,22 @@ export function getResearcherPrompt(
 
     Length Control : Produce a summary of approximately 100–200 words.
 
-    When assigning confidence score, evaluate your own reasoning according to:
-    - Evidence Grounding: Is your statement directly supported by data from the conversation?  
-    - Logical Robustness: Did you follow a consistent chain of reasoning without speculative leaps?  
-    - Domain Consistency: Does your conclusion align with known biomedical mechanisms or literature?  
-    - Uncertainty Acknowledgment: Did you identify assumptions or areas where data is incomplete?  
+    **Instruction for confidence_score: **
+    Estimate your confidence in your reasoning as a **continuous value** between 0.00 and 1.00. (e.g., 0.63, 0.77, 0.92)
 
-    Confidence Score:
-    5 - Strong evidence support, high logical and domain consistency, minimal speculation.
-    4 - Mostly supported with minor assumptions.
-    3 - Balanced reasoning but includes noticeable speculation or weak evidence.
-    2 - Weakly supported, heavily assumption-based.
-    1 - Mostly speculative or inconsistent reasoning.
+    Scoring Definitions:
+    - 1.0 : Fully supported by robust data, clear logic, and domain knowledge, no assumptions.
+    - 0.8–0.99 : Mostly supported, minor assumptions or small uncertainties present.
+    - 0.6–0.79 : Moderately supported, several assumptions, or partial evidence.
+    - 0.4–0.59 : Weak support, heavy reliance on assumptions or indirect evidence.
+    - 0.2–0.39 : Very weak support, mostly speculative.
+    - 0.0–0.19 : Purely hypothetical, unsupported, or logically inconsistent.
+
+    When estimating, consider four aspects:
+    1. **Evidence Grounding** – How directly supported is your statement by the data?
+    2. **Logical Robustness** – How internally coherent is your reasoning chain?
+    3. **Domain Alignment** – Does it fit established biomedical understanding?
+    4. **Uncertainty Awareness** – Did you recognize and qualify unknowns properly?
 
     Respond output ONLY with the following JSON object:
     {
@@ -133,14 +137,33 @@ Peer #${index + 1}: ${peer.researcherId}
     Peer Responses:
     ${peerSummary}
 
-    Length Control: Write approximately 100–150 words.
+    Length Control : Produce a summary of approximately 70–100 words.
+
+    **Instruction for confidence_score: **
+    Estimate your confidence in your reasoning as a **continuous value** between 0.00 and 1.00. (e.g., 0.63, 0.77, 0.92) 
+
+    Scoring Definitions:
+    - 1.0 : Fully supported by robust data, clear logic, and domain knowledge, no assumptions.
+    - 0.8–0.99 : Mostly supported, minor assumptions or small uncertainties present.
+    - 0.6–0.79 : Moderately supported, several assumptions, or partial evidence.
+    - 0.4–0.59 : Weak support, heavy reliance on assumptions or indirect evidence.
+    - 0.2–0.39 : Very weak support, mostly speculative.
+    - 0.0–0.19 : Purely hypothetical, unsupported, or logically inconsistent.
+
+    When estimating, consider four aspects:
+    1. **Evidence Grounding** – How directly supported is your statement by the data?
+    2. **Logical Robustness** – How internally coherent is your reasoning chain?
+    3. **Domain Alignment** – Does it fit established biomedical understanding?
+    4. **Uncertainty Awareness** – Did you recognize and qualify unknowns properly?
+
+    Assign a floating-point confidence between 0.0 and 1.0 (e.g., 0.63, 0.77, 0.92).
 
     Respond ONLY with JSON:
     {
       "confidence_score": NUMBER,
       "answer": STRING
     }
-    
+
     Strict JSON hygiene:
     - Escape every double quote inside string values as \\"
     - Do not include unescaped control characters (use spaces instead)
