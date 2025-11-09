@@ -16,7 +16,7 @@ export const SYNTHESIZER_PROMPTS = (
     1. Summarize the collective insights in 2-3 sentences, capturing agreements, disagreements, and key takeaways.
     2. Provide mediation notes that reconcile conflicting viewpoints or highlight gaps; suggest how the team should proceed.
     3. Extract up to three concise highlights capturing notable points or tensions. Each highlight must include a short title and detail.
-    4. Generate two follow-up questions that push the discussion forward (deeper reasoning, critique, or practical next steps).
+    4. Generate one follow-up question that pushes the discussion forward (deeper reasoning, critique, or practical next steps).
 
     ## Output Requirements
     - Respond strictly as valid JSON with UTF-8 characters only.
@@ -32,10 +32,10 @@ export const SYNTHESIZER_PROMPTS = (
           },
           ...
         ],                                             // optional array, max 3 items
-        "followUpQuestions": [string, string],         // exactly two questions
+        "followUpQuestion": string,                    // one question for the group
         "rawText": string | null                       // optional raw fallback content if needed
       }
-    - If you cannot fulfill a field, return null for strings and an empty array for "highlights".
+    - If you cannot fulfill a field, return null for strings and an empty array for "highlights". If no follow-up is reasonable, return an empty string.
     - Ensure JSON is minified without trailing commas.
 `;
 

@@ -8,19 +8,24 @@ import type {
 } from "@/types/synthesizer.types";
 
 export async function POST(request: NextRequest) {
+  let requestCycle: number | undefined;
+
   try {
     const body = (await request.json()) as SynthesizerRequestBody;
-    const { conversation, researcherResponses } = body;
+    const { conversation, researcherResponses, cycle } = body;
+    requestCycle = typeof cycle === "number" ? cycle : undefined;
 
     const validationError = validateRequestBody(
       conversation,
-      researcherResponses
+      researcherResponses,
+      cycle
     );
     if (validationError) {
       return new Response(
         JSON.stringify({
           status: "rejected",
           error: validationError,
+          cycle,
         } satisfies SynthesizerApiResponse),
         {
           status: 400,
@@ -28,6 +33,8 @@ export async function POST(request: NextRequest) {
         }
       );
     }
+
+    const cycleNumber = typeof cycle === "number" ? cycle : 1;
 
     const result = await runSynthesizerAgent({
       conversation: conversation.trim(),
@@ -38,6 +45,7 @@ export async function POST(request: NextRequest) {
       JSON.stringify({
         status: "fulfilled",
         result,
+        cycle: cycleNumber,
       } satisfies SynthesizerApiResponse),
       {
         status: 200,
@@ -52,6 +60,7 @@ export async function POST(request: NextRequest) {
           error instanceof Error
             ? error.message
             : "Unexpected error while running synthesizer agent.",
+        cycle: typeof requestCycle === "number" ? requestCycle : 1,
       } satisfies SynthesizerApiResponse),
       {
         status: 500,
@@ -63,7 +72,8 @@ export async function POST(request: NextRequest) {
 
 function validateRequestBody(
   conversation: unknown,
-  researcherResponses: unknown
+  researcherResponses: unknown,
+  cycle: unknown
 ): string | null {
   if (typeof conversation !== "string" || conversation.trim().length === 0) {
     return "conversation must be a non-empty string.";
@@ -79,6 +89,16 @@ function validateRequestBody(
 
   if (invalidIndex >= 0) {
     return `researcherResponses[${invalidIndex}] is invalid.`;
+  }
+
+  if (
+    typeof cycle !== "undefined" &&
+    (typeof cycle !== "number" ||
+      !Number.isInteger(cycle) ||
+      cycle <= 0 ||
+      cycle > Number.MAX_SAFE_INTEGER)
+  ) {
+    return "`cycle` must be a positive integer when provided.";
   }
 
   return null;

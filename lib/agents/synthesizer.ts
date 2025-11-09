@@ -60,75 +60,53 @@ function mergeProviderOptions(
 }
 
 function parseSynthesizerResponse(rawText: string): SynthesizerResult {
-  try {
-    const payload = JSON.parse(normalizeJsonFence(rawText)) as {
-      summary: unknown;
-      mediatorNotes: unknown;
-      highlights: unknown;
-      followUpQuestions: unknown;
-      rawText?: unknown;
-    };
+  const normalized = normalizeJsonFence(rawText);
+  const payload = safeParseSynthesizerPayload(normalized);
 
-    if (typeof payload.summary !== "string") {
-      throw new Error("`summary` must be a string.");
-    }
-
-    if (
-      payload.mediatorNotes !== null &&
-      typeof payload.mediatorNotes !== "string"
-    ) {
-      throw new Error("`mediatorNotes` must be a string or null.");
-    }
-
-    const highlights = Array.isArray(payload.highlights)
-      ? payload.highlights.map((entry, index) => {
-          if (
-            !entry ||
-            typeof entry !== "object" ||
-            typeof (entry as { title?: unknown }).title !== "string" ||
-            typeof (entry as { detail?: unknown }).detail !== "string"
-          ) {
-            throw new Error(`Highlight at index ${index} is invalid.`);
-          }
-
-          return {
-            title: (entry as { title: string }).title,
-            detail: (entry as { detail: string }).detail,
-          };
-        })
-      : [];
-
-    if (
-      !Array.isArray(payload.followUpQuestions) ||
-      payload.followUpQuestions.length === 0 ||
-      payload.followUpQuestions.some((item) => typeof item !== "string")
-    ) {
-      throw new Error(
-        "`followUpQuestions` must be a non-empty array of strings."
-      );
-    }
-
-    const normalizedFollowUps = payload.followUpQuestions.slice(0, 2);
-    while (normalizedFollowUps.length < 2) {
-      normalizedFollowUps.push("");
-    }
-
-    return {
-      summary: payload.summary,
-      mediatorNotes:
-        payload.mediatorNotes === null ? undefined : payload.mediatorNotes,
-      highlights,
-      followUpQuestions: normalizedFollowUps,
-      rawText:
-        typeof payload.rawText === "string" ? payload.rawText : rawText,
-    };
-  } catch (error) {
-    throw new Error(
-      `Failed to parse synthesizer response: ${
-        error instanceof Error ? error.message : String(error)
-      }\nRaw text: ${rawText}`
-    );
+  if (typeof payload.summary !== "string") {
+    throw new Error("`summary` must be a string.");
   }
+
+  if (
+    payload.mediatorNotes !== null &&
+    typeof payload.mediatorNotes !== "string"
+  ) {
+    throw new Error("`mediatorNotes` must be a string or null.");
+  }
+
+  const highlights = Array.isArray(payload.highlights)
+    ? payload.highlights.map((entry, index) => {
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          typeof (entry as { title?: unknown }).title !== "string" ||
+          typeof (entry as { detail?: unknown }).detail !== "string"
+        ) {
+          throw new Error(`Highlight at index ${index} is invalid.`);
+        }
+
+        return {
+          title: (entry as { title: string }).title,
+          detail: (entry as { detail: string }).detail,
+        };
+      })
+    : [];
+
+  if (
+    typeof payload.followUpQuestion !== "string" &&
+    payload.followUpQuestion !== null
+  ) {
+    throw new Error("`followUpQuestion` must be a string or null.");
+  }
+
+  return {
+    summary: payload.summary,
+    mediatorNotes:
+      payload.mediatorNotes === null ? undefined : payload.mediatorNotes,
+    highlights,
+    followUpQuestion: payload.followUpQuestion ?? "",
+    rawText: typeof payload.rawText === "string" ? payload.rawText : rawText,
+  };
 }
 
 function normalizeJsonFence(input: string): string {
@@ -143,3 +121,44 @@ function normalizeJsonFence(input: string): string {
   return trimmed;
 }
 
+type SynthesizerPayload = {
+  summary: unknown;
+  mediatorNotes: unknown;
+  highlights: unknown;
+  followUpQuestion: unknown;
+  rawText?: unknown;
+};
+
+function safeParseSynthesizerPayload(input: string): SynthesizerPayload {
+  try {
+    return JSON.parse(input) as SynthesizerPayload;
+  } catch (primaryError) {
+    const repaired = repairSynthesizerJson(input);
+
+    if (repaired !== input) {
+      try {
+        return JSON.parse(repaired) as SynthesizerPayload;
+      } catch (secondaryError) {
+        throw createParseError(secondaryError, input);
+      }
+    }
+
+    throw createParseError(primaryError, input);
+  }
+}
+
+function repairSynthesizerJson(input: string): string {
+  let output = input;
+
+  output = output.replace(/("detail"\s*:\s*"[^"]*")\s*,\s*{/g, "$1 }, {");
+
+  return output;
+}
+
+function createParseError(error: unknown, rawText: string) {
+  return new Error(
+    `Failed to parse synthesizer response: ${
+      error instanceof Error ? error.message : String(error)
+    }\nRaw text: ${rawText}`
+  );
+}

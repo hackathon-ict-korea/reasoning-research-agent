@@ -84,6 +84,11 @@ export function getResearcherPrompt(
       "confidence_score" : NUMBER,
       "answer" : STRING
     }
+    
+    Strict JSON hygiene:
+    - Escape every double quote inside string values as \\"
+    - Do not include unescaped control characters (use spaces instead)
+    - Avoid Markdown fences or extra commentary outside the JSON
   `;
 }
 
@@ -135,5 +140,10 @@ Peer #${index + 1}: ${peer.researcherId}
       "confidence_score": NUMBER,
       "answer": STRING
     }
+    
+    Strict JSON hygiene:
+    - Escape every double quote inside string values as \\"
+    - Do not include unescaped control characters (use spaces instead)
+    - Avoid Markdown fences or extra commentary outside the JSON
   `;
 }

@@ -10,6 +10,11 @@ import type { PeerResearcherResponse } from "@/types/researcher.types";
 type RequestBody = {
   conversation: string;
   researcherIds?: string[];
+  /**
+   * Optional cycle marker so the client can run multiple rounds.
+   * Defaults to 1 when omitted.
+   */
+  cycle?: number;
 };
 
 type InitialAgentResult =
@@ -40,7 +45,26 @@ type FeedbackAgentResult =
 export async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json();
-    const { conversation, researcherIds } = body;
+    const { conversation, researcherIds, cycle } = body;
+    if (
+      typeof cycle !== "undefined" &&
+      (typeof cycle !== "number" ||
+        !Number.isInteger(cycle) ||
+        cycle <= 0 ||
+        cycle > Number.MAX_SAFE_INTEGER)
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "`cycle` must be a positive integer when provided.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const cycleNumber = typeof cycle === "number" ? cycle : 1;
 
     if (typeof conversation !== "string" || conversation.trim().length === 0) {
       return new Response(
@@ -118,11 +142,13 @@ export async function POST(request: NextRequest) {
     const orderedInitialFulfilled = fulfilledInitial.map((entry, index) => ({
       ...entry,
       phasePosition: index + 1,
+      cycle: cycleNumber,
     }));
 
     const orderedInitialRejected = rejectedInitial.map((entry, index) => ({
       ...entry,
       phasePosition: orderedInitialFulfilled.length + index + 1,
+      cycle: cycleNumber,
     }));
 
     const peerResponses: PeerResearcherResponse[] = orderedInitialFulfilled.map(
@@ -183,11 +209,13 @@ export async function POST(request: NextRequest) {
     const orderedFeedbackFulfilled = fulfilledFeedback.map((entry, index) => ({
       ...entry,
       phasePosition: index + 1,
+      cycle: cycleNumber,
     }));
 
     const orderedFeedbackRejected = rejectedFeedback.map((entry, index) => ({
       ...entry,
       phasePosition: orderedFeedbackFulfilled.length + index + 1,
+      cycle: cycleNumber,
     }));
 
     const orderedResults = [
@@ -197,10 +225,13 @@ export async function POST(request: NextRequest) {
       ...orderedFeedbackRejected,
     ];
 
-    return new Response(JSON.stringify({ results: orderedResults }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ cycle: cycleNumber, results: orderedResults }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     return new Response(
       JSON.stringify({

@@ -15,18 +15,20 @@ export type SynthesizerResult = {
   summary: string;
   mediatorNotes?: string;
   highlights?: SynthesizerHighlight[];
-  followUpQuestions: string[];
+  followUpQuestion: string;
   rawText?: string;
 };
 
 export type SynthesizerFulfilledResponse = {
   status: "fulfilled";
   result: SynthesizerResult;
+  cycle?: number;
 };
 
 export type SynthesizerRejectedResponse = {
   status: "rejected";
   error: string;
+  cycle?: number;
 };
 
 export type SynthesizerApiResponse =
@@ -36,5 +38,5 @@ export type SynthesizerApiResponse =
 export type SynthesizerRequestBody = {
   conversation: string;
   researcherResponses: ResearcherSynthesisInput[];
+  cycle?: number;
 };
-
