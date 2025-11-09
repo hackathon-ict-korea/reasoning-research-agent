@@ -12,6 +12,7 @@ import { cn, parseMarkdown } from "@/lib/utils";
 import {
   FormEvent,
   ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -128,6 +129,7 @@ export default function Home() {
     reset: resetSynthesizer,
   } = useSynthesizer();
   const synthesizerKeysRef = useRef<Record<number, string>>({});
+  const pendingAutoStartRef = useRef<number | null>(null);
 
   const [viewMode, setViewMode] = useState<"focus" | "timeline">("focus");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
@@ -318,52 +320,101 @@ export default function Home() {
     synthesizerLoadingCycle,
   ]);
 
-  function handleStartFollowUpCycle(currentCycle: number) {
-    const nextCycle = currentCycle + 1;
+  const handleStartFollowUpCycle = useCallback(
+    (currentCycle: number) => {
+      const nextCycle = currentCycle + 1;
 
-    if (nextCycle > MAX_CYCLES || cycleConversations[nextCycle]) {
-      return;
+      if (nextCycle > MAX_CYCLES || cycleConversations[nextCycle]) {
+        return;
+      }
+
+      const synthesisForCycle = syntheses[currentCycle];
+      if (!synthesisForCycle) {
+        return;
+      }
+
+      const followUp = synthesisForCycle.followUpQuestion
+        ?.trim()
+        .replace(/\s+/g, " ");
+
+      if (!followUp || followUp.length === 0) {
+        return;
+      }
+
+      const baseConversation =
+        cycleConversations[currentCycle] ?? conversation.trim();
+      const nextConversation = [
+        baseConversation.trim(),
+        "",
+        `Synthesizer Cycle ${currentCycle} Follow-up Question:`,
+        `1. ${followUp}`,
+      ]
+        .join("\n")
+        .trim();
+
+      setCycleConversations((previous) => ({
+        ...previous,
+        [nextCycle]: nextConversation,
+      }));
+      setConversation(nextConversation);
+
+      const nextKeys = { ...synthesizerKeysRef.current };
+      delete nextKeys[nextCycle];
+      synthesizerKeysRef.current = nextKeys;
+
+      runResearchers({
+        conversation: nextConversation,
+        cycle: nextCycle,
+      });
+    },
+    [conversation, cycleConversations, runResearchers, syntheses]
+  );
+
+  useEffect(() => {
+    for (let cycle = 1; cycle < MAX_CYCLES; cycle += 1) {
+      const synthesisForCycle = syntheses[cycle];
+
+      if (!synthesisForCycle) {
+        continue;
+      }
+
+      const followUp = synthesisForCycle.followUpQuestion?.trim();
+
+      if (!followUp || followUp.length === 0) {
+        continue;
+      }
+
+      const nextCycle = cycle + 1;
+
+      if (
+        nextCycle > MAX_CYCLES ||
+        cycleConversations[nextCycle] ||
+        isResearchLoading ||
+        synthesizerLoadingCycle === nextCycle
+      ) {
+        continue;
+      }
+
+      if (pendingAutoStartRef.current === cycle) {
+        break;
+      }
+
+      pendingAutoStartRef.current = cycle;
+
+      setTimeout(() => {
+        pendingAutoStartRef.current = null;
+        handleStartFollowUpCycle(cycle);
+      }, 0);
+      break;
     }
-
-    const synthesisForCycle = syntheses[currentCycle];
-    if (!synthesisForCycle) {
-      return;
-    }
-
-    const followUp = synthesisForCycle.followUpQuestion
-      ?.trim()
-      .replace(/\s+/g, " ");
-
-    if (!followUp || followUp.length === 0) {
-      return;
-    }
-
-    const baseConversation =
-      cycleConversations[currentCycle] ?? conversation.trim();
-    const nextConversation = [
-      baseConversation.trim(),
-      "",
-      `Synthesizer Cycle ${currentCycle} Follow-up Question:`,
-      `1. ${followUp}`,
-    ]
-      .join("\n")
-      .trim();
-
-    setCycleConversations((previous) => ({
-      ...previous,
-      [nextCycle]: nextConversation,
-    }));
-    setConversation(nextConversation);
-
-    const nextKeys = { ...synthesizerKeysRef.current };
-    delete nextKeys[nextCycle];
-    synthesizerKeysRef.current = nextKeys;
-
-    runResearchers({
-      conversation: nextConversation,
-      cycle: nextCycle,
-    });
-  }
+  }, [
+    cycleConversations,
+    handleStartFollowUpCycle,
+    isResearchLoading,
+    pendingAutoStartRef,
+    syntheses,
+    synthesizerLoadingCycle,
+  ]);
 
   const groupedResults = useMemo(() => {
     return results.reduce<Record<number, typeof results>>(
@@ -401,9 +452,31 @@ export default function Home() {
     [groupedResults]
   );
 
+  const finalCycleId = `cycle-${MAX_CYCLES}`;
+
+  const hasFinalCycle = useMemo(
+    () =>
+      orderedCycleNumbers.includes(MAX_CYCLES) ||
+      synthesizerLoadingCycle === MAX_CYCLES,
+    [orderedCycleNumbers, synthesizerLoadingCycle]
+  );
+
+  const hasConclusionStage = useMemo(
+    () =>
+      hasFinalCycle &&
+      (Boolean(syntheses[MAX_CYCLES]) ||
+        Boolean(synthesizerErrors[MAX_CYCLES]) ||
+        synthesizerLoadingCycle === MAX_CYCLES),
+    [hasFinalCycle, syntheses, synthesizerErrors, synthesizerLoadingCycle]
+  );
+
   const activeStageId = useMemo(() => {
     if (synthesizerLoadingCycle !== null) {
       return `cycle-${synthesizerLoadingCycle}`;
+    }
+
+    if (hasConclusionStage) {
+      return "conclusion";
     }
 
     if (orderedCycleNumbers.length > 0) {
@@ -427,6 +500,7 @@ export default function Home() {
   }, [
     groupedResults,
     hasClarifierStage,
+    hasConclusionStage,
     isResearchLoading,
     orderedCycleNumbers,
     synthesizerErrors,
@@ -440,6 +514,49 @@ export default function Home() {
     synthesizerLoadingCycle !== null;
 
   const isSubmissionInFlight = isProcessing || isSubmissionPending;
+  const [focusStageId, setFocusStageId] = useState<string>(activeStageId);
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    if (viewMode !== "focus") {
+      if (focusStageId !== activeStageId) {
+        timeoutId = setTimeout(() => {
+          setFocusStageId(activeStageId);
+        }, 0);
+      }
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
+    }
+
+    if (selectedStageId) {
+      if (focusStageId !== selectedStageId) {
+        timeoutId = setTimeout(() => {
+          setFocusStageId(selectedStageId);
+        }, 0);
+      }
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
+    }
+
+    if (focusStageId !== activeStageId) {
+      timeoutId = setTimeout(() => {
+        setFocusStageId(activeStageId);
+      }, 2000);
+    }
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [activeStageId, focusStageId, selectedStageId, viewMode]);
 
   const renderInputStage = () => {
     const primaryActionLabel = isSubmissionPending
@@ -643,7 +760,11 @@ export default function Home() {
     </article>
   );
 
-  const renderCycleStage = (cycleNumber: number) => {
+  const renderCycleStage = (
+    cycleNumber: number,
+    options?: { hideSynthesizer?: boolean }
+  ) => {
+    const hideSynthesizer = options?.hideSynthesizer ?? false;
     const cycleEntries = groupedResults[cycleNumber] ?? [];
     const synthesizerForCycle = syntheses[cycleNumber];
     const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
@@ -656,12 +777,6 @@ export default function Home() {
     const nextCycle = cycleNumber + 1;
     const nextCycleConversation =
       nextCycle <= MAX_CYCLES ? cycleConversations[nextCycle] : undefined;
-    const canTriggerNextCycle =
-      followUpQuestion.length > 0 &&
-      cycleNumber < MAX_CYCLES &&
-      !nextCycleConversation &&
-      !isResearchLoading &&
-      synthesizerLoadingCycle !== nextCycle;
     const isNextCycleInFlight =
       cycleNumber < MAX_CYCLES &&
       Boolean(nextCycleConversation) &&
@@ -674,9 +789,7 @@ export default function Home() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">
-              {isFollowUpCycle
-                ? `Follow-up Analysis`
-                : "Primary Analysis"}
+              {isFollowUpCycle ? `Follow-up Analysis` : "Primary Analysis"}
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Compare researcher responses and Synthesizer summaries in one
@@ -772,107 +885,196 @@ export default function Home() {
             );
           })}
 
-          {(synthesizerErrorForCycle ||
-            isCycleLoading ||
-            synthesizerForCycle) && (
-            <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-                    Synthesizer
-                  </span>
-                  <h3 className="text-xl font-semibold">
-                    {isFollowUpCycle ? "Follow-up Summary" : "Mediator Summary"}
-                  </h3>
+          {!hideSynthesizer &&
+            (synthesizerErrorForCycle ||
+              isCycleLoading ||
+              synthesizerForCycle) && (
+              <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                      Synthesizer
+                    </span>
+                    <h3 className="text-xl font-semibold">
+                      {isFollowUpCycle
+                        ? "Follow-up Summary"
+                        : "Mediator Summary"}
+                    </h3>
+                  </div>
+                  <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
+                    {isFollowUpCycle ? "Cycle Follow-up" : "Collective View"}
+                  </div>
                 </div>
-                <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
-                  {isFollowUpCycle ? "Cycle Follow-up" : "Collective View"}
-                </div>
-              </div>
 
-              {synthesizerErrorForCycle ? (
-                <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
-                  Synthesizer error: {synthesizerErrorForCycle}
-                </p>
-              ) : isCycleLoading ? (
-                <p className="text-sm text-indigo-700 dark:text-indigo-200">
-                  Synthesizer is synthesizing researcher answers…
-                </p>
-              ) : synthesizerForCycle ? (
-                <div className="space-y-4 text-sm leading-6">
-                  <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
-                    {synthesizerForCycle.summary}
+                {synthesizerErrorForCycle ? (
+                  <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
+                    Synthesizer error: {synthesizerErrorForCycle}
                   </p>
+                ) : isCycleLoading ? (
+                  <p className="text-sm text-indigo-700 dark:text-indigo-200">
+                    Synthesizer is synthesizing researcher answers…
+                  </p>
+                ) : synthesizerForCycle ? (
+                  <div className="space-y-4 text-sm leading-6">
+                    <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
+                      {synthesizerForCycle.summary}
+                    </p>
 
-                  {synthesizerForCycle.highlights &&
-                  synthesizerForCycle.highlights.length > 0 ? (
-                    <div>
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        Key Highlights
-                      </h4>
-                      <ul className="mt-2 space-y-2">
-                        {synthesizerForCycle.highlights.map(
-                          (highlight, index) => (
-                            <li
-                              key={`${highlight.title}-${index}`}
-                              className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
-                            >
-                              <p className="font-semibold text-indigo-800 dark:text-indigo-100">
-                                {highlight.title}
-                              </p>
-                              <p className="text-indigo-700 dark:text-indigo-100">
-                                {highlight.detail}
-                              </p>
-                            </li>
-                          )
+                    {synthesizerForCycle.highlights &&
+                    synthesizerForCycle.highlights.length > 0 ? (
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                          Key Highlights
+                        </h4>
+                        <ul className="mt-2 space-y-2">
+                          {synthesizerForCycle.highlights.map(
+                            (highlight, index) => (
+                              <li
+                                key={`${highlight.title}-${index}`}
+                                className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
+                              >
+                                <p className="font-semibold text-indigo-800 dark:text-indigo-100">
+                                  {highlight.title}
+                                </p>
+                                <p className="text-indigo-700 dark:text-indigo-100">
+                                  {highlight.detail}
+                                </p>
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {!isFinalCycle ? (
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                          Follow-up Question
+                        </h4>
+                        {followUpQuestion.length > 0 ? (
+                          <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                            <span>{followUpQuestion}</span>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
+                            No follow-up question provided for this cycle.
+                          </p>
                         )}
-                      </ul>
-                    </div>
-                  ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
-                  {!isFinalCycle ? (
-                    <div>
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        Follow-up Question
-                      </h4>
-                      {followUpQuestion.length > 0 ? (
-                        <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
-                          <span>{followUpQuestion}</span>
-                        </div>
-                      ) : (
-                        <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
-                          No follow-up question provided for this cycle.
-                        </p>
-                      )}
-                    </div>
-                  ) : null}
-
-                  {canTriggerNextCycle ? (
-                    <button
-                      type="button"
-                      onClick={() => handleStartFollowUpCycle(cycleNumber)}
-                      className="mt-4 inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus:ring-indigo-300 dark:focus:ring-offset-zinc-900"
-                    >
-                      Run Cycle {nextCycle}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {isNextCycleInFlight ? (
-                <p className="mt-4 text-xs text-indigo-600 dark:text-indigo-200">
-                  Cycle {nextCycle} is starting—researchers are preparing their
-                  next-round analyses.
-                </p>
-              ) : null}
-            </article>
-          )}
+                {isNextCycleInFlight ? (
+                  <p className="mt-4 text-xs text-indigo-600 dark:text-indigo-200">
+                    Cycle {nextCycle} is starting—researchers are preparing
+                    their next-round analyses.
+                  </p>
+                ) : null}
+              </article>
+            )}
         </div>
       </div>
     );
   };
 
-  const stages = [
+  const renderConclusionStage = () => {
+    const cycleNumber = MAX_CYCLES;
+    const synthesizerForCycle = syntheses[cycleNumber];
+    const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
+    const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
+    const cycleEntries = groupedResults[cycleNumber] ?? [];
+    const fulfilledCount = cycleEntries.filter(
+      (entry) => entry.status === "fulfilled"
+    ).length;
+    const errorCount = cycleEntries.length - fulfilledCount;
+
+    if (!synthesizerForCycle && !synthesizerErrorForCycle && !isCycleLoading) {
+      return (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+          No conclusion yet. The final synthesis will generate automatically
+          once prior cycles finish.
+        </div>
+      );
+    }
+
+    return (
+      <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+              Final Outcome
+            </span>
+            <h3 className="text-xl font-semibold">
+              Cycle {cycleNumber} Conclusion
+            </h3>
+          </div>
+          <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
+            {fulfilledCount > 0
+              ? `Responses ${fulfilledCount}${
+                  errorCount > 0 ? ` · Errors ${errorCount}` : ""
+                }`
+              : "Responses pending"}
+          </div>
+        </div>
+
+        {synthesizerErrorForCycle ? (
+          <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
+            Synthesizer error: {synthesizerErrorForCycle}
+          </p>
+        ) : isCycleLoading ? (
+          <p className="text-sm text-indigo-700 dark:text-indigo-200">
+            Synthesizer is synthesizing researcher answers…
+          </p>
+        ) : synthesizerForCycle ? (
+          <div className="space-y-4 text-sm leading-6">
+            {synthesizerForCycle.summary ? (
+              <p className="text-base font-medium text-indigo-800 dark:text-indigo-100 whitespace-pre-wrap">
+                {synthesizerForCycle.summary}
+              </p>
+            ) : null}
+
+            {synthesizerForCycle.highlights &&
+            synthesizerForCycle.highlights.length > 0 ? (
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                  Key Highlights
+                </h4>
+                <ul className="mt-2 space-y-2">
+                  {synthesizerForCycle.highlights.map((highlight, index) => (
+                    <li
+                      key={`${highlight.title}-${index}`}
+                      className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
+                    >
+                      <p className="font-semibold text-indigo-800 dark:text-indigo-100">
+                        {highlight.title}
+                      </p>
+                      <p className="text-indigo-700 dark:text-indigo-100">
+                        {highlight.detail}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {synthesizerForCycle.followUpQuestion ? (
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                  Additional Considerations
+                </h4>
+                <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                  <span>{synthesizerForCycle.followUpQuestion}</span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+    );
+  };
+
+  const baseStages = [
     {
       id: "input",
       title: "Problem Definition",
@@ -882,7 +1084,7 @@ export default function Home() {
   ];
 
   if (hasClarifierStage) {
-    stages.push({
+    baseStages.push({
       id: "clarifier",
       title: "Clarifier",
       subtitle: "Cycle 0",
@@ -891,7 +1093,7 @@ export default function Home() {
   }
 
   orderedCycleNumbers.forEach((cycleNumber) => {
-    stages.push({
+    baseStages.push({
       id: `cycle-${cycleNumber}`,
       title: cycleNumber > 1 ? `Cycle ${cycleNumber}` : "Cycle 1",
       subtitle: cycleNumber > 1 ? "Follow-up" : "Primary",
@@ -899,21 +1101,49 @@ export default function Home() {
     });
   });
 
+  const focusStages = (() => {
+    const mapped = baseStages.map((stage) => {
+      if (stage.id === finalCycleId) {
+        return {
+          ...stage,
+          content: renderCycleStage(MAX_CYCLES, { hideSynthesizer: true }),
+        };
+      }
+      return stage;
+    });
+
+    if (hasConclusionStage) {
+      mapped.push({
+        id: "conclusion",
+        title: "Conclusion",
+        subtitle: `Cycle ${MAX_CYCLES}`,
+        content: renderConclusionStage(),
+      });
+    }
+
+    return mapped;
+  })();
+
+  const stages = baseStages;
+
   const progressStageIndex = Math.max(
     0,
     stages.findIndex((stage) => stage.id === activeStageId)
   );
 
   const preferredStageId =
-    viewMode === "focus" &&
-    selectedStageId &&
-    stages.some((stage) => stage.id === selectedStageId)
-      ? selectedStageId
+    viewMode === "focus"
+      ? selectedStageId &&
+        focusStages.some((stage) => stage.id === selectedStageId)
+        ? selectedStageId
+        : focusStages.some((stage) => stage.id === focusStageId)
+        ? focusStageId
+        : focusStages[0]?.id ?? focusStageId
       : activeStageId;
 
   const focusStageIndex = Math.max(
     0,
-    stages.findIndex((stage) => stage.id === preferredStageId)
+    focusStages.findIndex((stage) => stage.id === preferredStageId)
   );
 
   const highlightedStageId =
@@ -1093,20 +1323,36 @@ export default function Home() {
       }
       const synthFooter = synthFooterParts.join(" · ");
 
-      timelineNodes.push({
-        id: `${stage.id}-synth`,
-        stageId: stage.id,
-        status: synthStatus,
-        title:
-          cycleNumber > 1
-            ? `Cycle ${cycleNumber} Synthesizer`
-            : "Cycle 1 Synthesizer",
-        subtitle: "Synthesizer",
-        content: synthContent,
-        footer: synthFooter,
-        synthesizer: synthesizerDetails,
-        isSynthNode: true,
-      });
+      if (isFinalCycle) {
+        if (hasConclusionStage) {
+          timelineNodes.push({
+            id: "conclusion",
+            stageId: "conclusion",
+            status: synthStatus,
+            title: `Cycle ${cycleNumber} Conclusion`,
+            subtitle: "Conclusion",
+            content: synthContent,
+            footer: synthFooter,
+            synthesizer: synthesizerDetails,
+            isSynthNode: true,
+          });
+        }
+      } else {
+        timelineNodes.push({
+          id: `${stage.id}-synth`,
+          stageId: stage.id,
+          status: synthStatus,
+          title:
+            cycleNumber > 1
+              ? `Cycle ${cycleNumber} Synthesizer`
+              : "Cycle 1 Synthesizer",
+          subtitle: "Synthesizer",
+          content: synthContent,
+          footer: synthFooter,
+          synthesizer: synthesizerDetails,
+          isSynthNode: true,
+        });
+      }
 
       return;
     }
@@ -1128,7 +1374,7 @@ export default function Home() {
         className="flex min-h-[420px] gap-0 transition-transform duration-700 ease-[cubic-bezier(0.4,0.0,0.2,1)]"
         style={{ transform: `translateX(-${focusStageIndex * 100}%)` }}
       >
-        {stages.map((stage) => (
+        {focusStages.map((stage) => (
           <section
             key={stage.id}
             className="flex min-h-full w-full shrink-0 flex-col gap-6 px-6 transition-all"
@@ -1352,7 +1598,7 @@ export default function Home() {
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <nav className="flex flex-wrap items-center gap-2">
-            {stages.map((stage) => (
+            {focusStages.map((stage) => (
               <button
                 key={stage.id}
                 type="button"
