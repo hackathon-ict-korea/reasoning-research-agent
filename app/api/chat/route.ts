@@ -1,5 +1,5 @@
 import { streamText } from "ai";
-import { geminiPro } from "@/lib/clients/google";
+import { geminiPro } from "@/app/clients/google";
 
 export const runtime = "edge";
 

@@ -1,6 +1,9 @@
 import { generateText } from "ai";
 
-import { defaultGoogleProviderOptions, geminiFlash } from "../clients/google";
+import {
+  defaultGoogleProviderOptions,
+  geminiFlash,
+} from "../../app/clients/google";
 import {
   getSynthesizerClarifierPrompt,
   getSynthesizerPrompt,
