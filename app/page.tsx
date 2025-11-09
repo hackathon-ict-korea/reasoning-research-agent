@@ -1252,7 +1252,7 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 bg-white px-6 py-16 font-sans text-zinc-900 dark:bg-black dark:text-zinc-50">
       <header className="space-y-2">
-        <h1 className="text-3xl font-semibold">Researcher Agent Playground</h1>
+        <h1 className="text-3xl font-semibold">Reasoning Researcher Agent</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Paste a conversation transcript and follow each stage of the research
           pipeline as it unfolds horizontally.
