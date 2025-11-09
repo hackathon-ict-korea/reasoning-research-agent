@@ -703,14 +703,6 @@ export default function Home() {
                       {label}
                     </span>
                     <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          "text-[11px] font-semibold uppercase tracking-wide",
-                          colors.label
-                        )}
-                      >
-                        Cycle {entry.cycle}
-                      </span>
                       <h3
                         className={cn(
                           "text-lg font-bold capitalize",
