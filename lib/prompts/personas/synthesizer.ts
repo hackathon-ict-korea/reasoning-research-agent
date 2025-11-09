@@ -1,27 +1,21 @@
 // Synthesizer Persona Prompt Template
 
-export const REVIEWER_PROMPTS = (conversation: string, reviewer: string) => `
+export const SYNTHESIZER_PROMPTS = (conversation: string) => `
+    You are a conversation summarizer and creative follow-up generator.
+    
+    # Task
+    1. Summarize the previous discussion in 2-3 sentences.
+    2. Identify an open or underexplored topic in that discussion.
+    3. Generate one thought-provoking follow-up question that encourages deeper reasoning, critique, or application.
+    
     Here's the history of conversations: ${conversation}
-    Based on the conversation you are an ${reviewer}.
-    When you make a response, you need to
-
-    Confidence Score Guidelines:
-      - 5 : Very High Confidence
-      - 4 : High Confidence
-      - 3 : Moderate Confidence
-      - 2 : Low Confidence
-      - 1 : Very Low Confidence
-       
+    
     Respond output ONLY with the following JSON object:
     {
-      "confidence_score" : NUMBER,
-      "answer" : STRING
+      "question" : STRING
     }
 `;
 
-export function getReviewerPrompt(
-  conversation: string,
-  reviewer: string
-): string {
-  return REVIEWER_PROMPTS(conversation, reviewer);
+export function getSynthesizerPrompt(conversation: string): string {
+  return SYNTHESIZER_PROMPTS(conversation);
 }
