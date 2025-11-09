@@ -103,6 +103,18 @@ body {
   }
 }
 
+@keyframes borderPulse {
+  0%,
+  100% {
+    border-color: rgb(49, 51, 184);
+    opacity: 0.6;
+  }
+  50% {
+    border-color: rgb(174, 175, 255);
+    opacity: 1;
+  }
+}
+
 @layer utilities {
   .animate-shimmer {
     animation: shimmer 2s infinite;

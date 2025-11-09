@@ -591,7 +591,20 @@ export default function Home() {
             value={visibleConversation}
             onChange={(event) => setVisibleConversation(event.target.value)}
             placeholder="Summarized discussion or bullet list of findings..."
-            className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
+            style={
+              isSubmissionPending
+                ? {
+                    animation: "borderPulse 3s ease-in-out infinite",
+                  }
+                : undefined
+            }
+            className={cn(
+              "h-40 w-full resize-y rounded-lg border bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition",
+              isSubmissionPending
+                ? "border-indigo-400 dark:border-indigo-500"
+                : "border-zinc-300 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:focus:border-zinc-500 dark:focus:ring-zinc-600",
+              "dark:bg-black dark:text-zinc-100"
+            )}
             required
             disabled={isSubmissionInFlight}
           />
