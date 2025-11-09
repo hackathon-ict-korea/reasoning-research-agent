@@ -1,6 +1,10 @@
 "use client";
 
 import Loading from "@/components/loading";
+import FileUpload, {
+  AttachedFile,
+  AttachedFilesList,
+} from "@/components/file-upload";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
 import { cn } from "@/lib/utils";
@@ -10,6 +14,7 @@ const MAX_CYCLES = 3;
 
 export default function Home() {
   const [conversation, setConversation] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [cycleConversations, setCycleConversations] = useState<
     Record<number, string>
   >({});
@@ -35,10 +40,36 @@ export default function Home() {
 
   const [isMessageSent, setIsMessageSent] = useState<boolean>(false);
 
+  function handleFilesAdded(newFiles: AttachedFile[]) {
+    setAttachedFiles((prev) => [...prev, ...newFiles]);
+  }
+
+  function handleFileRemoved(index: number) {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsMessageSent(true);
     console.log("conversation", conversation);
+
+    // Prepare message parts with text and files
+    const parts: Array<{
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+    }> = [{ type: "text", text: conversation }];
+
+    // Add attached files to parts
+    attachedFiles.forEach((file) => {
+      parts.push({
+        type: "file",
+        data: file.data,
+        mimeType: file.mimeType,
+      });
+    });
+
     // call summarize api(/summarize) and use respond as conversation param
     const summarizeResponse = await fetch("/api/summarize", {
       method: "POST",
@@ -46,9 +77,7 @@ export default function Home() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        messages: [
-          { role: "user", parts: [{ type: "text", text: conversation }] },
-        ],
+        messages: [{ role: "user", parts }],
       }),
     });
 
@@ -63,6 +92,7 @@ export default function Home() {
     synthesizerKeysRef.current = {};
     setCycleConversations({ 1: normalizedConversation });
     setConversation(normalizedConversation);
+    setAttachedFiles([]); // Clear attached files after submission
 
     await runSynthesizerClarifier({
       conversation: normalizedConversation,
@@ -272,9 +302,18 @@ export default function Home() {
             isMessageSent ? "hidden" : ""
           )}
         >
-          <label htmlFor="conversation" className="block text-sm font-medium">
-            Conversation
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="conversation" className="block text-sm font-medium">
+              Conversation
+            </label>
+            <FileUpload onFilesAdded={handleFilesAdded} />
+          </div>
+
+          <AttachedFilesList
+            attachedFiles={attachedFiles}
+            onFileRemoved={handleFileRemoved}
+          />
+
           <textarea
             id="conversation"
             value={conversation}
