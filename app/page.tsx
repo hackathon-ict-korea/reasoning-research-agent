@@ -7,7 +7,7 @@ import FileUpload, {
 } from "@/components/file-upload";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
-import { cn } from "@/lib/utils";
+import { cn, parseMarkdown } from "@/lib/utils";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 const MAX_CYCLES = 3;
@@ -546,9 +546,7 @@ export default function Home() {
                       </h3>
                     </div>
                   </div>
-                  <p className="mt-4 text-sm leading-6 text-zinc-800 dark:text-zinc-200">
-                    {entry.result.answer}
-                  </p>
+                  <p className="mt-4 text-sm leading-6 text-zinc-800 dark:text-zinc-200 whitespace-break-spaces" dangerouslySetInnerHTML={{ __html: parseMarkdown(entry.result.answer) }} />
                 </div>
               </article>
             ) : (
