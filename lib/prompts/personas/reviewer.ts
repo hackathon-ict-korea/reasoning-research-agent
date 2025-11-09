@@ -10,9 +10,9 @@ export const REVIEWER_PROMPTS = (inputPapers: string[]) => `
     Here's the input papers : ${inputPapers}
     
     Respond output ONLY with the following JSON object:
-    {{
-      "summary" : ""
-    }}
+    {
+      "summary" : STRING
+    }
 `;
 
 export function getReviewerPrompt(inputPapers: string[]): string {
