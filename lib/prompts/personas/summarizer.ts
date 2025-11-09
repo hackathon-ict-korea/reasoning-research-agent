@@ -1,27 +1,22 @@
 // Summarizer Persona Prompt Template
 
-export const REVIEWER_PROMPTS = (conversation: string, reviewer: string) => `
-    Here's the history of conversations: ${conversation}
-    Based on the conversation you are an ${reviewer}.
-    When you make a response, you need to
-
-    Confidence Score Guidelines:
-      - 5 : Very High Confidence
-      - 4 : High Confidence
-      - 3 : Moderate Confidence
-      - 2 : Low Confidence
-      - 1 : Very Low Confidence
-       
+export const SUMMARIZER_PROMPTS = (inputPapers: string[]) => `
+    You are an expert research analyst specializing in academic paper summarization.
+    Your task is to summarize the given input papers with precision and academic clarity.
+    
+    Length Control**
+       - Produce a summary of approximately 250–300 words.  
+    
+    Here's the input papers : ${inputPapers}
+    
     Respond output ONLY with the following JSON object:
-    {
-      "confidence_score" : NUMBER,
-      "answer" : STRING
-    }
+    {{
+      "summary" : ""
+    }}
 `;
 
-export function getReviewerPrompt(
-  conversation: string,
-  reviewer: string
+export function getSummarizerPrompt(
+  inputPapers: string[]
 ): string {
-  return REVIEWER_PROMPTS(conversation, reviewer);
+  return SUMMARIZER_PROMPTS(inputPapers);
 }
