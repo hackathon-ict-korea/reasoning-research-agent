@@ -1,7 +1,8 @@
 import { generateText } from "ai";
 
 import { defaultGoogleProviderOptions, geminiFlash } from "../clients/google";
-import { getResearcherPrompt, type ResearcherId } from "../prompts";
+import { getResearcherPrompt } from "../prompts";
+import { ResearcherId } from "@/types/researcher.types";
 
 type ProviderOptions = NonNullable<
   Parameters<typeof generateText>[0]["providerOptions"]

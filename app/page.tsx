@@ -1,65 +1,16 @@
-'use client';
+"use client";
 
+import useResearch from "@/hooks/useResearch";
 import { FormEvent, useState } from "react";
-
-type FulfilledResult = {
-  status: "fulfilled";
-  result: {
-    researcherId: string;
-    answer: string;
-    confidenceScore: number;
-    rawText: string;
-  };
-};
-
-type RejectedResult = {
-  status: "rejected";
-  error: string;
-  researcherId: string;
-};
-
-type ApiResponse = {
-  results: Array<FulfilledResult | RejectedResult>;
-};
 
 export default function Home() {
   const [conversation, setConversation] = useState("");
-  const [results, setResults] = useState<ApiResponse["results"]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { results, isLoading, error, call } = useResearch();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    setIsLoading(true);
-    setError(null);
-    setResults([]);
-
-    try {
-      const response = await fetch("/api/researchers", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ conversation }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(
-          typeof errorBody.error === "string"
-            ? errorBody.error
-            : `Request failed with status ${response.status}`
-        );
-      }
-
-      const data = (await response.json()) as ApiResponse;
-      setResults(data.results);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unexpected error");
-    } finally {
-      setIsLoading(false);
-    }
+    call(conversation);
   }
 
   return (

@@ -107,7 +107,10 @@ export const PromptInputProvider = ({
   );
 };
 
-export type PromptInputProps = Omit<React.FormHTMLAttributes<HTMLFormElement>, 'onSubmit'> & {
+export type PromptInputProps = Omit<
+  React.FormHTMLAttributes<HTMLFormElement>,
+  "onSubmit"
+> & {
   onSubmit: (message: PromptInputMessage) => void;
   globalDrop?: boolean;
   multiple?: boolean;
@@ -125,21 +128,21 @@ export const PromptInput = ({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    
+
     const message: PromptInputMessage = {
       text: controller.textInput.input,
       files: controller.attachments.files.map((a) => a.file),
     };
-    
+
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
 
     if (!(hasText || hasAttachments)) {
       return;
     }
-    
+
     onSubmit(message);
-    
+
     // Clear inputs after submit
     controller.textInput.clear();
     controller.attachments.clear();
@@ -233,7 +236,9 @@ export const PromptInputAttachment = ({
         <div className="flex size-full flex-col items-center justify-center gap-1 p-2">
           <PaperclipIcon className="size-6 text-muted-foreground" />
           {isPDF && (
-            <span className="text-[10px] font-medium text-muted-foreground">PDF</span>
+            <span className="text-[10px] font-medium text-muted-foreground">
+              PDF
+            </span>
           )}
         </div>
       )}
@@ -310,7 +315,10 @@ export const PromptInputFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => {
   return (
     <div
-      className={cn("flex items-center justify-between gap-2 px-3 pb-2", className)}
+      className={cn(
+        "flex items-center justify-between gap-2 px-3 pb-2",
+        className
+      )}
       {...props}
     />
   );
@@ -320,7 +328,9 @@ export const PromptInputTools = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
-  return <div className={cn("flex items-center gap-1", className)} {...props} />;
+  return (
+    <div className={cn("flex items-center gap-1", className)} {...props} />
+  );
 };
 
 export const PromptInputButton = React.forwardRef<
@@ -444,4 +454,3 @@ export const PromptInputSubmit = ({
     </Button>
   );
 };
-

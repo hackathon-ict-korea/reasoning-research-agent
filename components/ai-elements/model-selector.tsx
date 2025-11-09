@@ -12,9 +12,8 @@ type ModelSelectorContextType = {
   setSearchQuery: (query: string) => void;
 };
 
-const ModelSelectorContext = React.createContext<ModelSelectorContextType | null>(
-  null
-);
+const ModelSelectorContext =
+  React.createContext<ModelSelectorContextType | null>(null);
 
 const useModelSelector = () => {
   const context = React.useContext(ModelSelectorContext);
@@ -92,10 +91,7 @@ export const ModelSelectorContent = ({
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-40"
-        onClick={() => setOpen(false)}
-      />
+      <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
       <div
         className={cn(
           "absolute bottom-full left-0 z-50 mb-2 w-80 rounded-lg border bg-popover p-2 shadow-md",
@@ -137,10 +133,7 @@ export const ModelSelectorList = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => {
   return (
-    <div
-      className={cn("mt-2 max-h-80 overflow-y-auto", className)}
-      {...props}
-    >
+    <div className={cn("mt-2 max-h-80 overflow-y-auto", className)} {...props}>
       {children}
     </div>
   );
@@ -231,7 +224,10 @@ export const ModelSelectorLogo = ({
 
   return (
     <span
-      className={cn("flex size-5 items-center justify-center text-sm", className)}
+      className={cn(
+        "flex size-5 items-center justify-center text-sm",
+        className
+      )}
       {...props}
     >
       {logo}
@@ -262,4 +258,3 @@ export const ModelSelectorName = ({
     </span>
   );
 };
-

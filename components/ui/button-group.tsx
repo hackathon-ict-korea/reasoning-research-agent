@@ -1,8 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export interface ButtonGroupProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+export interface ButtonGroupProps extends React.HTMLAttributes<HTMLDivElement> {
   orientation?: "horizontal" | "vertical";
 }
 
@@ -42,4 +41,3 @@ const ButtonGroupText = React.forwardRef<
 ButtonGroupText.displayName = "ButtonGroupText";
 
 export { ButtonGroup, ButtonGroupText };
-

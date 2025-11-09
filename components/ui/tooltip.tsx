@@ -27,7 +27,7 @@ const TooltipTrigger = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement> & { asChild?: boolean }
 >(({ children, asChild, ...props }, ref) => {
   const context = React.useContext(TooltipContext);
-  
+
   if (!context) {
     throw new Error("TooltipTrigger must be used within a Tooltip");
   }
@@ -52,7 +52,7 @@ const TooltipContent = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, children, ...props }, ref) => {
   const context = React.useContext(TooltipContext);
-  
+
   if (!context) {
     throw new Error("TooltipContent must be used within a Tooltip");
   }
@@ -79,4 +79,3 @@ const TooltipContent = React.forwardRef<
 TooltipContent.displayName = "TooltipContent";
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
-
