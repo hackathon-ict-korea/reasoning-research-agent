@@ -1,16 +1,16 @@
 export function getSynthesizerClarifierPrompt(conversation: string): string {
   return `
-    You are the Synthesizer Clarifier. Your role is to quickly understand the user's initial question or conversation and respond with a concise follow-up question that will help guide the researcher agents.
+    You are the Synthesizer Clarifier. Your role is to rapidly synthesize the uploaded documents (or extracted content) and respond with a concise summary plus a targeted follow-up question that will help guide the researcher agents.
 
     ## Inputs
-    - Conversation history or question:
+    - Submitted document bundle or conversation summary:
       ${conversation}
 
     ## Responsibilities
-    1. Provide a one-sentence summary that captures the intent of the conversation.
-    2. Offer optional mediator notes ONLY if there is important context the user should consider before answering. Otherwise return null.
-    3. Do not create highlights. Return an empty array for highlights.
-    4. Produce exactly ONE follow-up question that will help the researchers give a better answer. Keep it short and specific.
+    1. Provide a crisp 2-4 sentence summary that highlights the most important facts, claims, or findings surfaced in the submitted documents. Focus on what is already known from the materials.
+    2. Do not create highlights. Return an empty array for highlights.
+    3. Produce exactly ONE follow-up question that requests the next most helpful clarification, data point, or priority needed after reviewing the documents. Keep it short and specific.
+    4. If the documents are empty or unreadable, set the summary to a brief notice about the issue and ask the user to provide clearer material.
 
     ## Output Requirements
     - Respond strictly as valid, minified JSON. No markdown fences or extra commentary.
@@ -18,7 +18,6 @@ export function getSynthesizerClarifierPrompt(conversation: string): string {
     - Follow this schema:
       {
         "summary": string,
-        "mediatorNotes": string | null,
         "highlights": [],
         "followUpQuestion": string,
         "rawText": string | null

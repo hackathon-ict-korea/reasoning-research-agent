@@ -13,7 +13,6 @@ export type SynthesizerHighlight = {
 
 export type SynthesizerResult = {
   summary: string;
-  mediatorNotes?: string;
   highlights?: SynthesizerHighlight[];
   followUpQuestion: string;
   rawText?: string;

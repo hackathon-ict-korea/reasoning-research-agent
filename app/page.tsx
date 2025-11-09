@@ -26,6 +26,72 @@ const STATUS_LABELS = {
   error: "Error",
 } as const;
 
+// 리뷰어별 파스텔 컬러 매핑
+const RESEARCHER_COLORS: Record<
+  string,
+  { bg: string; border: string; text: string; label: string }
+> = {
+  default: {
+    bg: "bg-slate-50 dark:bg-slate-900/60",
+    border: "border-slate-200 dark:border-slate-700",
+    text: "text-slate-700 dark:text-slate-100",
+    label: "text-slate-500 dark:text-slate-400",
+  },
+  researcherA: {
+    bg: "bg-rose-50 dark:bg-rose-900/30",
+    border: "border-rose-200 dark:border-rose-700",
+    text: "text-rose-900 dark:text-rose-100",
+    label: "text-rose-500 dark:text-rose-400",
+  },
+  researcherB: {
+    bg: "bg-sky-50 dark:bg-sky-900/30",
+    border: "border-sky-200 dark:border-sky-700",
+    text: "text-sky-900 dark:text-sky-100",
+    label: "text-sky-500 dark:text-sky-400",
+  },
+  researcherC: {
+    bg: "bg-emerald-50 dark:bg-emerald-900/30",
+    border: "border-emerald-200 dark:border-emerald-700",
+    text: "text-emerald-900 dark:text-emerald-100",
+    label: "text-emerald-500 dark:text-emerald-400",
+  },
+  researcherD: {
+    bg: "bg-purple-50 dark:bg-purple-900/30",
+    border: "border-purple-200 dark:border-purple-700",
+    text: "text-purple-900 dark:text-purple-100",
+    label: "text-purple-500 dark:text-purple-400",
+  },
+  researcherE: {
+    bg: "bg-amber-50 dark:bg-amber-900/30",
+    border: "border-amber-200 dark:border-amber-700",
+    text: "text-amber-900 dark:text-amber-100",
+    label: "text-amber-500 dark:text-amber-400",
+  },
+  researcherF: {
+    bg: "bg-teal-50 dark:bg-teal-900/30",
+    border: "border-teal-200 dark:border-teal-700",
+    text: "text-teal-900 dark:text-teal-100",
+    label: "text-teal-500 dark:text-teal-400",
+  },
+  researcherG: {
+    bg: "bg-pink-50 dark:bg-pink-900/30",
+    border: "border-pink-200 dark:border-pink-700",
+    text: "text-pink-900 dark:text-pink-100",
+    label: "text-pink-500 dark:text-pink-400",
+  },
+  researcherH: {
+    bg: "bg-cyan-50 dark:bg-cyan-900/30",
+    border: "border-cyan-200 dark:border-cyan-700",
+    text: "text-cyan-900 dark:text-cyan-100",
+    label: "text-cyan-500 dark:text-cyan-400",
+  },
+};
+
+// 리뷰어 ID로 색상 가져오기
+function getResearcherColors(researcherId: string) {
+  return RESEARCHER_COLORS[researcherId] || RESEARCHER_COLORS.default;
+}
+
 type TimelineStatus = keyof typeof STATUS_LABELS;
 
 type TimelineResponse = {
@@ -45,7 +111,6 @@ type TimelineHighlight = {
 
 type TimelineSynthesizer = {
   summary?: string;
-  mediatorNotes?: string;
   highlights?: TimelineHighlight[];
   followUp?: string;
   error?: string;
@@ -398,12 +463,9 @@ export default function Home() {
           isProcessing ? "opacity-70" : ""
         )}
       >
-        <div className="flex items-center justify-between">
-          <label htmlFor="conversation" className="block text-sm font-medium">
-            Conversation
-          </label>
-          <FileUpload onFilesAdded={handleFilesAdded} />
-        </div>
+        <label htmlFor="conversation" className="block text-sm font-medium">
+          Conversation
+        </label>
 
         <AttachedFilesList
           attachedFiles={attachedFiles}
@@ -419,21 +481,24 @@ export default function Home() {
           required
           disabled={isProcessing}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {isSynthesizerClarifying
-              ? "Synthesizer is understanding the question…"
-              : isResearchLoading
-              ? "Generating…"
-              : "Run Researchers"}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs text-zinc-500 dark:text-zinc-400">
             Conversation stays in the browser until you submit.
           </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              {isSynthesizerClarifying
+                ? "Synthesizer is understanding the question…"
+                : isResearchLoading
+                ? "Generating…"
+                : "Run Researchers"}
+            </button>
+            <FileUpload onFilesAdded={handleFilesAdded} />
+          </div>
         </div>
       </form>
       {researcherError ? (
@@ -447,14 +512,9 @@ export default function Home() {
   const renderTimelineInputStage = () => (
     <form onSubmit={handleSubmit} className="space-y-4 text-sm">
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-            Quick prompt
-          </span>
-          <div className="flex items-center gap-2">
-            <FileUpload onFilesAdded={handleFilesAdded} />
-          </div>
-        </div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+          Quick prompt
+        </span>
         <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-inner transition focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/70 dark:focus-within:border-zinc-500">
           <textarea
             value={visibleConversation}
@@ -501,13 +561,16 @@ export default function Home() {
         <span className="text-xs text-zinc-400 dark:text-zinc-500">
           Runs the full researcher workflow with this prompt.
         </span>
-        <button
-          type="submit"
-          disabled={isProcessing}
-          className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-        >
-          {isProcessing ? "Running…" : "Run"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={isProcessing}
+            className="inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            {isProcessing ? "Running…" : "Run"}
+          </button>
+          <FileUpload onFilesAdded={handleFilesAdded} />
+        </div>
       </div>
     </form>
   );
@@ -542,17 +605,6 @@ export default function Home() {
             {initialClarifier.summary}
           </p>
 
-          {initialClarifier.mediatorNotes ? (
-            <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-              <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                Reference Notes
-              </h4>
-              <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                {initialClarifier.mediatorNotes}
-              </p>
-            </div>
-          ) : null}
-
           {initialClarifier.followUpQuestion ? (
             <div className="rounded-lg border border-indigo-200 bg-white px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/60">
               <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
@@ -574,8 +626,10 @@ export default function Home() {
     const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
     const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
     const isFollowUpCycle = cycleNumber > 1;
-    const followUpQuestion =
-      synthesizerForCycle?.followUpQuestion?.trim() ?? "";
+    const isFinalCycle = cycleNumber === MAX_CYCLES;
+    const followUpQuestion = isFinalCycle
+      ? ""
+      : synthesizerForCycle?.followUpQuestion?.trim() ?? "";
     const nextCycle = cycleNumber + 1;
     const nextCycleConversation =
       nextCycle <= MAX_CYCLES ? cycleConversations[nextCycle] : undefined;
@@ -623,27 +677,55 @@ export default function Home() {
                 ? `InitialResponse#${entry.phasePosition}`
                 : `FeedbackResponse#${entry.phasePosition}`;
 
+            const researcherId =
+              entry.status === "fulfilled"
+                ? entry.result.researcherId
+                : entry.researcherId;
+            const colors = getResearcherColors(researcherId);
+
             return entry.status === "fulfilled" ? (
               <article
                 key={`${entry.cycle}-${entry.result.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="flex h-full flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                className={cn(
+                  "flex h-full flex-col justify-between rounded-xl border p-5 shadow-sm transition-all",
+                  colors.border,
+                  colors.bg
+                )}
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">
+                    <span
+                      className={cn(
+                        "text-xs font-medium uppercase",
+                        colors.label
+                      )}
+                    >
                       {label}
                     </span>
                     <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                      <span
+                        className={cn(
+                          "text-[11px] font-semibold uppercase tracking-wide",
+                          colors.label
+                        )}
+                      >
                         Cycle {entry.cycle}
                       </span>
-                      <h3 className="text-lg font-semibold capitalize">
+                      <h3
+                        className={cn(
+                          "text-lg font-bold capitalize",
+                          colors.label
+                        )}
+                      >
                         {entry.result.researcherId}
                       </h3>
                     </div>
                   </div>
                   <p
-                    className="mt-4 text-sm leading-6 text-zinc-800 dark:text-zinc-200 whitespace-break-spaces"
+                    className={cn(
+                      "mt-4 text-sm leading-6 whitespace-break-spaces",
+                      colors.text
+                    )}
                     dangerouslySetInnerHTML={{
                       __html: parseMarkdown(entry.result.answer),
                     }}
@@ -653,14 +735,14 @@ export default function Home() {
             ) : (
               <article
                 key={`${entry.cycle}-${entry.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase text-amber-600 dark:text-amber-300">
+                  <span className="text-xs font-medium uppercase text-red-600 dark:text-red-300">
                     {label}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-500 dark:text-amber-300/80">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-red-500 dark:text-red-300/80">
                       Cycle {entry.cycle}
                     </span>
                     <h3 className="text-lg font-semibold capitalize">
@@ -707,17 +789,6 @@ export default function Home() {
                     {synthesizerForCycle.summary}
                   </p>
 
-                  {synthesizerForCycle.mediatorNotes ? (
-                    <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        Mediator Notes
-                      </h4>
-                      <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                        {synthesizerForCycle.mediatorNotes}
-                      </p>
-                    </div>
-                  ) : null}
-
                   {synthesizerForCycle.highlights &&
                   synthesizerForCycle.highlights.length > 0 ? (
                     <div>
@@ -744,20 +815,22 @@ export default function Home() {
                     </div>
                   ) : null}
 
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                      Follow-up Question
-                    </h4>
-                    {followUpQuestion.length > 0 ? (
-                      <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
-                        <span>{followUpQuestion}</span>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
-                        No follow-up question provided for this cycle.
-                      </p>
-                    )}
-                  </div>
+                  {!isFinalCycle ? (
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                        Follow-up Question
+                      </h4>
+                      {followUpQuestion.length > 0 ? (
+                        <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                          <span>{followUpQuestion}</span>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
+                          No follow-up question provided for this cycle.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
 
                   {canTriggerNextCycle ? (
                     <button
@@ -891,7 +964,7 @@ export default function Home() {
         footer = "Status: Error";
         nodeStatus = "error";
       } else if (isSynthesizerClarifying) {
-        content = "Synthesizer is interpreting the initial question…";
+        content = "Synthesizer is summarizing the submitted materials…";
         footer = "Status: In Progress";
         nodeStatus = "in-progress";
       } else if (initialClarifier) {
@@ -900,7 +973,6 @@ export default function Home() {
         nodeStatus = "done";
         synthesizerDetails = {
           summary: initialClarifier.summary.trim(),
-          mediatorNotes: initialClarifier.mediatorNotes?.trim(),
           followUp: initialClarifier.followUpQuestion?.trim(),
           loading: false,
         };
@@ -930,7 +1002,10 @@ export default function Home() {
       const synthesizerForCycle = syntheses[cycleNumber];
       const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
       const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
-      const followUp = synthesizerForCycle?.followUpQuestion?.trim();
+      const isFinalCycle = cycleNumber === MAX_CYCLES;
+      const followUp = !isFinalCycle
+        ? synthesizerForCycle?.followUpQuestion?.trim()
+        : undefined;
 
       let cycleContent = "Cycle information is being prepared.";
       if (cycleEntries.length > 0) {
@@ -960,7 +1035,6 @@ export default function Home() {
       }
       const synthesizerDetails: TimelineSynthesizer = {
         summary: synthesizerForCycle?.summary?.trim(),
-        mediatorNotes: synthesizerForCycle?.mediatorNotes?.trim(),
         highlights: synthesizerForCycle?.highlights?.map((highlight) => ({
           title: highlight.title,
           detail: highlight.detail,
@@ -1170,17 +1244,6 @@ export default function Home() {
                                 <p className="whitespace-pre-wrap font-medium">
                                   {node.synthesizer.summary}
                                 </p>
-                              ) : null}
-
-                              {node.synthesizer.mediatorNotes ? (
-                                <div className="space-y-1 text-xs">
-                                  <span className="font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-                                    Mediator Notes
-                                  </span>
-                                  <p className="whitespace-pre-wrap text-sm text-indigo-800 dark:text-indigo-100">
-                                    {node.synthesizer.mediatorNotes}
-                                  </p>
-                                </div>
                               ) : null}
 
                               {node.synthesizer.highlights &&

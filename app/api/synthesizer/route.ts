@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
         : await runSynthesizerAgent({
             conversation: trimmedConversation,
             researcherResponses: researcherResponses ?? [],
+            cycle: cycleNumber,
           });
 
     return new Response(
