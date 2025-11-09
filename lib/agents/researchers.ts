@@ -1,8 +1,8 @@
 import { generateText } from "ai";
 
 import { defaultGoogleProviderOptions, geminiFlash } from "../clients/google";
-import { getResearcherPrompt } from "../prompts";
-import { ResearcherId } from "@/types/researcher.types";
+import { getResearcherCritiquePrompt, getResearcherPrompt } from "../prompts";
+import { PeerResearcherResponse, ResearcherId } from "@/types/researcher.types";
 
 type ProviderOptions = NonNullable<
   Parameters<typeof generateText>[0]["providerOptions"]
@@ -36,6 +36,50 @@ export async function runResearcherAgent({
 }: ResearcherAgentArgs): Promise<ResearcherAgentResult> {
   const prompt = getResearcherPrompt(conversation, researcherId);
 
+  return executeResearcherModel({
+    researcherId,
+    prompt,
+    providerOptions,
+  });
+}
+
+export type ResearcherCritiqueAgentArgs = {
+  researcherId: ResearcherId;
+  conversation: string;
+  peerResponses: PeerResearcherResponse[];
+  providerOptions?: ProviderOptions;
+};
+
+export async function runResearcherCritiqueAgent({
+  researcherId,
+  conversation,
+  peerResponses,
+  providerOptions,
+}: ResearcherCritiqueAgentArgs): Promise<ResearcherAgentResult> {
+  const prompt = getResearcherCritiquePrompt(
+    conversation,
+    researcherId,
+    peerResponses
+  );
+
+  return executeResearcherModel({
+    researcherId,
+    prompt,
+    providerOptions,
+  });
+}
+
+type ExecuteResearcherModelArgs = {
+  researcherId: ResearcherId;
+  prompt: string;
+  providerOptions?: ProviderOptions;
+};
+
+async function executeResearcherModel({
+  researcherId,
+  prompt,
+  providerOptions,
+}: ExecuteResearcherModelArgs): Promise<ResearcherAgentResult> {
   const mergedProviderOptions = mergeProviderOptions(
     defaultGoogleProviderOptions,
     providerOptions

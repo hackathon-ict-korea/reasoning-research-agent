@@ -1,4 +1,8 @@
-import type { ResearcherId, ResearcherPersona } from "@/types/researcher.types";
+import type {
+  PeerResearcherResponse,
+  ResearcherId,
+  ResearcherPersona,
+} from "@/types/researcher.types";
 
 const researcherPersonas: Record<ResearcherId, ResearcherPersona> = {
   researcherA: {
@@ -85,4 +89,51 @@ export function getResearcherPrompt(
 
 export function listResearcherPersonas(): ResearcherPersona[] {
   return Object.values(researcherPersonas);
+}
+
+export function getResearcherCritiquePrompt(
+  conversation: string,
+  researcherId: ResearcherId,
+  peerResponses: PeerResearcherResponse[]
+): string {
+  const persona = researcherPersonas[researcherId];
+
+  const peerSummary =
+    peerResponses.length === 0
+      ? "No peer responses were available."
+      : peerResponses
+          .map(
+            (peer, index) => `
+Peer #${index + 1}: ${peer.researcherId}
+- Confidence: ${peer.confidenceScore.toFixed(1)} / 5
+- Summary: ${peer.answer}
+`
+          )
+          .join("\n");
+
+  return `
+    Conversation so far: ${conversation}
+
+    You are acting as ${persona.title}.
+    Persona brief: ${persona.description}
+    Focus your analysis on: ${persona.focus}
+
+    You have already provided an initial assessment. Now, after reviewing your peers' analyses, offer a *critical* follow-up response.
+    - Identify points of disagreement or weaknesses in the peers' arguments.
+    - Defend or refine your own stance where appropriate.
+    - Reference specific peer statements when critiquing them.
+    - Keep the analysis grounded in biomedical reasoning and avoid redundant restatements of your original answer.
+    - Prioritize constructive criticism that highlights methodological gaps, unsupported claims, or overlooked evidence.
+
+    Peer Responses:
+    ${peerSummary}
+
+    Length Control: Write approximately 100–150 words.
+
+    Respond ONLY with JSON:
+    {
+      "confidence_score": NUMBER,
+      "answer": STRING
+    }
+  `;
 }

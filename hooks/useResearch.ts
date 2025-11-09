@@ -8,12 +8,16 @@ type FulfilledResult = {
     confidenceScore: number;
     rawText: string;
   };
+  phase: "initial" | "feedback";
+  phasePosition: number;
 };
 
 type RejectedResult = {
   status: "rejected";
   error: string;
   researcherId: string;
+  phase: "initial" | "feedback";
+  phasePosition: number;
 };
 
 type ApiResponse = {
@@ -26,6 +30,9 @@ export default function useResearch() {
   const [error, setError] = useState<string | null>(null);
 
   async function call(conversation: string, researcherIds?: string[]) {
+    setIsLoading(true);
+    setError(null);
+
     try {
       const response = await fetch("/api/researchers", {
         method: "POST",

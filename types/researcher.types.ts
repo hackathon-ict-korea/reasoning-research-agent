@@ -7,3 +7,9 @@ export type ResearcherPersona = {
   description: string;
   focus: string;
 };
+
+export type PeerResearcherResponse = {
+  researcherId: ResearcherId;
+  answer: string;
+  confidenceScore: number;
+};

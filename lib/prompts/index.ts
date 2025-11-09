@@ -5,9 +5,15 @@ import { getSynthesizerPrompt } from "./personas/synthesizer";
 import {
   getResearcherPrompt,
   listResearcherPersonas,
+  getResearcherCritiquePrompt,
 } from "./personas/researchers";
 
 export type AgentType = "reviewer" | "synthesizer" | "researcher";
 
-export { getReviewerPrompt, getSynthesizerPrompt, getResearcherPrompt };
+export {
+  getReviewerPrompt,
+  getSynthesizerPrompt,
+  getResearcherPrompt,
+  getResearcherCritiquePrompt,
+};
 export { listResearcherPersonas };
