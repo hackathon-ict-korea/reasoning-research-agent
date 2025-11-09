@@ -1,5 +1,6 @@
 "use client";
 
+import DotGrid from "@/components/dot-grid";
 import FileUpload, {
   AttachedFile,
   AttachedFilesList,
@@ -1250,69 +1251,82 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 bg-white px-6 py-16 font-sans text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold">Reasoning Researcher Agent</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Paste a conversation transcript and follow each stage of the research
-          pipeline as it unfolds horizontally.
-        </p>
-      </header>
+    <>
+      <DotGrid
+        dotSize={2}
+        gap={15}
+        baseColor="#3b2593"
+        activeColor="#29253c"
+        proximity={120}
+        shockRadius={250}
+        shockStrength={5}
+        resistance={750}
+        returnDuration={1.5}
+      />
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 bg-transparent px-6 py-16 font-sans text-zinc-900 dark:text-zinc-50">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold">Reasoning Researcher Agent</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Paste a conversation transcript and follow each stage of the
+            research pipeline as it unfolds horizontally.
+          </p>
+        </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <nav className="flex flex-wrap items-center gap-2">
-          {stages.map((stage) => (
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <nav className="flex flex-wrap items-center gap-2">
+            {stages.map((stage) => (
+              <button
+                key={stage.id}
+                type="button"
+                onClick={() => {
+                  setViewMode("focus");
+                  setSelectedStageId(stage.id);
+                }}
+                aria-pressed={highlightedStageId === stage.id}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition",
+                  highlightedStageId === stage.id
+                    ? "border-indigo-500 bg-indigo-100 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100"
+                    : "border-zinc-200 bg-white/60 text-zinc-500 hover:border-indigo-200 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
+                )}
+              >
+                {stage.title}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white p-1 text-xs font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <button
-              key={stage.id}
               type="button"
-              onClick={() => {
-                setViewMode("focus");
-                setSelectedStageId(stage.id);
-              }}
-              aria-pressed={highlightedStageId === stage.id}
+              onClick={() => setViewMode("focus")}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition",
-                highlightedStageId === stage.id
-                  ? "border-indigo-500 bg-indigo-100 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100"
-                  : "border-zinc-200 bg-white/60 text-zinc-500 hover:border-indigo-200 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
+                "rounded-full px-3 py-1 transition",
+                viewMode === "focus"
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
               )}
             >
-              {stage.title}
+              Focus
             </button>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white p-1 text-xs font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-          <button
-            type="button"
-            onClick={() => setViewMode("focus")}
-            className={cn(
-              "rounded-full px-3 py-1 transition",
-              viewMode === "focus"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            )}
-          >
-            Focus
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedStageId(null);
-              setViewMode("timeline");
-            }}
-            className={cn(
-              "rounded-full px-3 py-1 transition",
-              viewMode === "timeline"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            )}
-          >
-            Timeline
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedStageId(null);
+                setViewMode("timeline");
+              }}
+              className={cn(
+                "rounded-full px-3 py-1 transition",
+                viewMode === "timeline"
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              )}
+            >
+              Timeline
+            </button>
+          </div>
         </div>
-      </div>
 
-      {viewMode === "timeline" ? renderTimelineView() : renderFocusView()}
-    </main>
+        {viewMode === "timeline" ? renderTimelineView() : renderFocusView()}
+      </main>
+    </>
   );
 }
