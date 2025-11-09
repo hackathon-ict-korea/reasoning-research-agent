@@ -698,13 +698,10 @@ export default function Home() {
               <article
                 key={`${entry.cycle}-${entry.result.researcherId}-${entry.phase}-${entry.phasePosition}`}
                 className={cn(
-                  "flex h-full flex-col justify-between rounded-xl border p-5 shadow-sm animate-fadeInSlide transition-all",
+                  "flex h-full flex-col justify-between rounded-xl border p-5 shadow-sm transition-all",
                   colors.border,
                   colors.bg
                 )}
-                style={{
-                  animationDelay: `${entryIndex * 150}ms`,
-                }}
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -749,10 +746,7 @@ export default function Home() {
             ) : (
               <article
                 key={`${entry.cycle}-${entry.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200 animate-fadeInSlide"
-                style={{
-                  animationDelay: `${entryIndex * 150}ms`,
-                }}
+                className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium uppercase text-red-600 dark:text-red-300">
