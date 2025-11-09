@@ -830,8 +830,8 @@ export default function Home() {
           {cycleEntries.map((entry) => {
             const label =
               entry.phase === "initial"
-                ? `InitialResponse#${entry.phasePosition}`
-                : `FeedbackResponse#${entry.phasePosition}`;
+                ? `InitialResponse #${entry.phasePosition}`
+                : `FeedbackResponse #${entry.phasePosition}`;
 
             const researcherId =
               entry.status === "fulfilled"
