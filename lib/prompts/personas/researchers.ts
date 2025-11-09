@@ -1,12 +1,4 @@
-// Centralized Researcher Persona Prompt Definitions
-type ResearcherPersona = {
-  id: ResearcherId;
-  title: string;
-  description: string;
-  focus: string;
-};
-
-export type ResearcherId = "researcherA" | "researcherB" | "researcherC";
+import type { ResearcherId, ResearcherPersona } from "@/types/researcher.types";
 
 const researcherPersonas: Record<ResearcherId, ResearcherPersona> = {
   researcherA: {
