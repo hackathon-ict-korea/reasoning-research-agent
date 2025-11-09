@@ -17,35 +17,38 @@ type RequestBody = {
   cycle?: number;
 };
 
-type InitialAgentResult =
-  | {
-      status: "fulfilled";
-      phase: "initial";
-      result: Awaited<ReturnType<typeof runResearcherAgent>>;
-    }
-  | {
-      status: "rejected";
-      phase: "initial";
-      error: string;
-      researcherId: string;
-    };
+type ResearchPhase = "initial" | "feedback" | "final";
 
-type FeedbackAgentResult =
-  | {
-      status: "fulfilled";
-      phase: "feedback";
-      result: Awaited<ReturnType<typeof runResearcherCritiqueAgent>>;
-    }
-  | {
-      status: "rejected";
-      phase: "feedback";
-      error: string;
-      researcherId: string;
-    };
+type StreamFulfilledResult = {
+  status: "fulfilled";
+  cycle: number;
+  phase: ResearchPhase;
+  phasePosition: number;
+  result: Awaited<ReturnType<typeof runResearcherAgent>>;
+};
+
+type StreamRejectedResult = {
+  status: "rejected";
+  cycle: number;
+  phase: ResearchPhase;
+  phasePosition: number;
+  researcherId: string;
+  error: string;
+};
+
+type StreamResult = StreamFulfilledResult | StreamRejectedResult;
+
+type StreamEvent =
+  | { type: "result"; payload: StreamResult }
+  | { type: "phaseComplete"; cycle: number; phase: ResearchPhase }
+  | { type: "complete"; cycle: number }
+  | { type: "error"; message: string; cycle?: number };
+
 export async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json();
     const { conversation, researcherIds, cycle } = body;
+
     if (
       typeof cycle !== "undefined" &&
       (typeof cycle !== "number" ||
@@ -102,136 +105,224 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const initialResults: InitialAgentResult[] = await Promise.all(
-      targetResearchers.map((researcherId) =>
-        runResearcherAgent({
-          researcherId,
-          conversation,
-        })
-          .then((result) => ({
-            status: "fulfilled" as const,
-            phase: "initial" as const,
-            result,
-          }))
-          .catch((error: unknown) => ({
-            status: "rejected" as const,
-            phase: "initial" as const,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Unknown researcher error",
-            researcherId,
-          }))
-      )
-    );
+    const encoder = new TextEncoder();
 
-    const fulfilledInitial = initialResults.filter(
-      (entry): entry is Extract<InitialAgentResult, { status: "fulfilled" }> =>
-        entry.status === "fulfilled"
-    );
+    const stream = new ReadableStream({
+      start: async (controller) => {
+        const send = (event: StreamEvent) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        };
 
-    const rejectedInitial = initialResults.filter(
-      (entry): entry is Extract<InitialAgentResult, { status: "rejected" }> =>
-        entry.status === "rejected"
-    );
+        const closeWithError = (message: string) => {
+          send({ type: "error", message, cycle: cycleNumber });
+          controller.close();
+        };
 
-    fulfilledInitial.sort(
-      (a, b) => b.result.confidenceScore - a.result.confidenceScore
-    );
+        try {
+          let initialPosition = 1;
+          const initialFulfilled: StreamFulfilledResult[] = [];
 
-    const orderedInitialFulfilled = fulfilledInitial.map((entry, index) => ({
-      ...entry,
-      phasePosition: index + 1,
-      cycle: cycleNumber,
-    }));
+          await Promise.all(
+            targetResearchers.map(async (researcherId) => {
+              const phasePosition = initialPosition++;
 
-    const orderedInitialRejected = rejectedInitial.map((entry, index) => ({
-      ...entry,
-      phasePosition: orderedInitialFulfilled.length + index + 1,
-      cycle: cycleNumber,
-    }));
+              try {
+                const result = await runResearcherAgent({
+                  researcherId,
+                  conversation,
+                });
 
-    const peerResponses: PeerResearcherResponse[] = orderedInitialFulfilled.map(
-      ({ result }) => ({
-        researcherId: result.researcherId,
-        answer: result.answer,
-        confidenceScore: result.confidenceScore,
-      })
-    );
-
-    const feedbackResults: FeedbackAgentResult[] =
-      orderedInitialFulfilled.length === 0
-        ? []
-        : await Promise.all(
-            orderedInitialFulfilled.map((entry) =>
-              runResearcherCritiqueAgent({
-                researcherId: entry.result.researcherId,
-                conversation,
-                peerResponses: peerResponses.filter(
-                  (peer) => peer.researcherId !== entry.result.researcherId
-                ),
-              })
-                .then((result) => ({
-                  status: "fulfilled" as const,
-                  phase: "feedback" as const,
+                const entry: StreamFulfilledResult = {
+                  status: "fulfilled",
+                  cycle: cycleNumber,
+                  phase: "initial",
+                  phasePosition,
                   result,
-                }))
-                .catch((error: unknown) => ({
-                  status: "rejected" as const,
-                  phase: "feedback" as const,
+                };
+
+                initialFulfilled.push(entry);
+                send({ type: "result", payload: entry });
+              } catch (error) {
+                const entry: StreamRejectedResult = {
+                  status: "rejected",
+                  cycle: cycleNumber,
+                  phase: "initial",
+                  phasePosition,
+                  researcherId,
                   error:
                     error instanceof Error
                       ? error.message
                       : "Unknown researcher error",
-                  researcherId: entry.result.researcherId,
-                }))
-            )
+                };
+
+                send({ type: "result", payload: entry });
+              }
+            })
           );
 
-    const fulfilledFeedback = feedbackResults.filter(
-      (
-        entry
-      ): entry is Extract<
-        (typeof feedbackResults)[number],
-        { status: "fulfilled" }
-      > => entry.status === "fulfilled"
-    );
+          send({ type: "phaseComplete", cycle: cycleNumber, phase: "initial" });
 
-    const rejectedFeedback = feedbackResults.filter(
-      (
-        entry
-      ): entry is Extract<
-        (typeof feedbackResults)[number],
-        { status: "rejected" }
-      > => entry.status === "rejected"
-    );
+          if (initialFulfilled.length === 0) {
+            send({ type: "complete", cycle: cycleNumber });
+            controller.close();
+            return;
+          }
 
-    const orderedFeedbackFulfilled = fulfilledFeedback.map((entry, index) => ({
-      ...entry,
-      phasePosition: index + 1,
-      cycle: cycleNumber,
-    }));
+          const peerResponses: PeerResearcherResponse[] = initialFulfilled.map(
+            ({ result }) => ({
+              researcherId: result.researcherId,
+              answer: result.answer,
+              confidenceScore: result.confidenceScore,
+            })
+          );
 
-    const orderedFeedbackRejected = rejectedFeedback.map((entry, index) => ({
-      ...entry,
-      phasePosition: orderedFeedbackFulfilled.length + index + 1,
-      cycle: cycleNumber,
-    }));
+          let feedbackBest: StreamFulfilledResult | null = null;
+          let feedbackErrorPosition = 2;
 
-    const orderedResults = [
-      ...orderedInitialFulfilled,
-      ...orderedInitialRejected,
-      ...orderedFeedbackFulfilled,
-      ...orderedFeedbackRejected,
-    ];
+          await Promise.all(
+            targetResearchers.map(async (researcherId) => {
+              try {
+                const result = await runResearcherCritiqueAgent({
+                  researcherId,
+                  conversation,
+                  peerResponses: peerResponses.filter(
+                    (peer) => peer.researcherId !== researcherId
+                  ),
+                });
 
-    return new Response(
-      JSON.stringify({ cycle: cycleNumber, results: orderedResults }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+                if (
+                  feedbackBest === null ||
+                  result.confidenceScore > feedbackBest.result.confidenceScore
+                ) {
+                  const entry: StreamFulfilledResult = {
+                    status: "fulfilled",
+                    cycle: cycleNumber,
+                    phase: "feedback",
+                    phasePosition: 1,
+                    result,
+                  };
+
+                  feedbackBest = entry;
+                  send({ type: "result", payload: entry });
+                }
+              } catch (error) {
+                const entry: StreamRejectedResult = {
+                  status: "rejected",
+                  cycle: cycleNumber,
+                  phase: "feedback",
+                  phasePosition: feedbackErrorPosition++,
+                  researcherId,
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Unknown researcher error",
+                };
+
+                send({ type: "result", payload: entry });
+              }
+            })
+          );
+
+          send({
+            type: "phaseComplete",
+            cycle: cycleNumber,
+            phase: "feedback",
+          });
+
+          if (feedbackBest === null) {
+            send({ type: "complete", cycle: cycleNumber });
+            controller.close();
+            return;
+          }
+
+          const feedbackWinner = feedbackBest as StreamFulfilledResult;
+
+          const peerResponsesWithFeedback: PeerResearcherResponse[] = [
+            ...peerResponses,
+            {
+              researcherId: feedbackWinner.result.researcherId,
+              answer: feedbackWinner.result.answer,
+              confidenceScore: feedbackWinner.result.confidenceScore,
+            },
+          ];
+
+          let finalBest: StreamFulfilledResult | null = null;
+          let finalErrorPosition = 2;
+
+          await Promise.all(
+            targetResearchers
+              .filter(
+                (researcherId) =>
+                  researcherId !== feedbackWinner.result.researcherId
+              )
+              .map(async (researcherId) => {
+                try {
+                  const result = await runResearcherCritiqueAgent({
+                    researcherId,
+                    conversation,
+                    peerResponses: peerResponsesWithFeedback.filter(
+                      (peer) => peer.researcherId !== researcherId
+                    ),
+                  });
+
+                  if (
+                    finalBest === null ||
+                    result.confidenceScore > finalBest.result.confidenceScore
+                  ) {
+                    const entry: StreamFulfilledResult = {
+                      status: "fulfilled",
+                      cycle: cycleNumber,
+                      phase: "final",
+                      phasePosition: 1,
+                      result,
+                    };
+
+                    finalBest = entry;
+                    send({ type: "result", payload: entry });
+                  }
+                } catch (error) {
+                  const entry: StreamRejectedResult = {
+                    status: "rejected",
+                    cycle: cycleNumber,
+                    phase: "final",
+                    phasePosition: finalErrorPosition++,
+                    researcherId,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Unknown researcher error",
+                  };
+
+                  send({ type: "result", payload: entry });
+                }
+              })
+          );
+
+          send({
+            type: "phaseComplete",
+            cycle: cycleNumber,
+            phase: "final",
+          });
+
+          send({ type: "complete", cycle: cycleNumber });
+          controller.close();
+        } catch (error) {
+          closeWithError(
+            error instanceof Error
+              ? error.message
+              : "Unexpected error while running researcher agents."
+          );
+        }
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/jsonl; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
   } catch (error) {
     return new Response(
       JSON.stringify({
