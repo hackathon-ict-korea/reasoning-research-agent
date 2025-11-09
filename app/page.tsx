@@ -25,6 +25,10 @@ export default function Home() {
     errors: synthesizerErrors,
     loadingCycle: synthesizerLoadingCycle,
     call: runSynthesizer,
+    clarify: runSynthesizerClarifier,
+    clarifier: initialClarifier,
+    clarifierError: initialClarifierError,
+    isClarifying: isSynthesizerClarifying,
     reset: resetSynthesizer,
   } = useSynthesizer();
   const synthesizerKeysRef = useRef<Record<number, string>>({});
@@ -59,6 +63,10 @@ export default function Home() {
     synthesizerKeysRef.current = {};
     setCycleConversations({ 1: normalizedConversation });
     setConversation(normalizedConversation);
+
+    await runSynthesizerClarifier({
+      conversation: normalizedConversation,
+    });
 
     runResearchers({
       conversation: normalizedConversation,
@@ -259,10 +267,14 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={isResearchLoading}
+              disabled={isResearchLoading || isSynthesizerClarifying}
               className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
             >
-              {isResearchLoading ? "Generating…" : "Run Researchers"}
+              {isSynthesizerClarifying
+                ? "Synthesizer가 질문을 이해 중…"
+                : isResearchLoading
+                ? "Generating…"
+                : "Run Researchers"}
             </button>
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
               Conversation stays in the browser until you submit.
@@ -276,6 +288,66 @@ export default function Home() {
           {researcherError}
         </div>
       ) : null}
+
+      {(initialClarifierError ||
+        isSynthesizerClarifying ||
+        initialClarifier) && (
+        <section className="w-full">
+          <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                  Synthesizer Clarifier
+                </span>
+                <h3 className="text-xl font-semibold">
+                  첫 질문 이해 &amp; 팔로업 제안
+                </h3>
+              </div>
+              <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
+                Cycle 0
+              </div>
+            </div>
+
+            {initialClarifierError ? (
+              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
+                Synthesizer 오류: {initialClarifierError}
+              </p>
+            ) : isSynthesizerClarifying ? (
+              <p className="text-sm text-indigo-700 dark:text-indigo-200">
+                Synthesizer가 질문을 파악하는 중입니다…
+              </p>
+            ) : initialClarifier ? (
+              <div className="space-y-4 text-sm leading-6">
+                <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
+                  {initialClarifier.summary}
+                </p>
+
+                {initialClarifier.mediatorNotes ? (
+                  <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
+                    <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                      참고 메모
+                    </h4>
+                    <p className="mt-1 text-indigo-800 dark:text-indigo-100">
+                      {initialClarifier.mediatorNotes}
+                    </p>
+                  </div>
+                ) : null}
+
+                {initialClarifier.followUpQuestion ? (
+                  <div className="rounded-lg border border-indigo-200 bg-white px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/60">
+                    <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                      추천 팔로업 질문
+                    </h4>
+                    <p className="mt-1 text-indigo-900 dark:text-indigo-100">
+                      {initialClarifier.followUpQuestion}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+        </section>
+      )}
 
       {sortedCycles.length > 0 ? (
         <section className="flex w-full flex-col gap-10">

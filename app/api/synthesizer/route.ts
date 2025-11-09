@@ -1,24 +1,31 @@
 import { NextRequest } from "next/server";
 
-import { runSynthesizerAgent } from "../../../lib/agents/synthesizer";
+import {
+  runSynthesizerAgent,
+  runSynthesizerClarifierAgent,
+} from "../../../lib/agents/synthesizer";
 import type {
   ResearcherSynthesisInput,
   SynthesizerApiResponse,
   SynthesizerRequestBody,
+  SynthesizerMode,
 } from "@/types/synthesizer.types";
 
 export async function POST(request: NextRequest) {
   let requestCycle: number | undefined;
+  let requestMode: SynthesizerMode = "synthesis";
 
   try {
     const body = (await request.json()) as SynthesizerRequestBody;
-    const { conversation, researcherResponses, cycle } = body;
+    const { conversation, researcherResponses, cycle, mode } = body;
     requestCycle = typeof cycle === "number" ? cycle : undefined;
+    requestMode = mode === "clarify" ? "clarify" : "synthesis";
 
     const validationError = validateRequestBody(
       conversation,
       researcherResponses,
-      cycle
+      cycle,
+      requestMode
     );
     if (validationError) {
       return new Response(
@@ -26,6 +33,7 @@ export async function POST(request: NextRequest) {
           status: "rejected",
           error: validationError,
           cycle,
+          mode: requestMode,
         } satisfies SynthesizerApiResponse),
         {
           status: 400,
@@ -34,18 +42,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const cycleNumber = typeof cycle === "number" ? cycle : 1;
+    const cycleNumber =
+      typeof cycle === "number" ? cycle : requestMode === "clarify" ? 0 : 1;
 
-    const result = await runSynthesizerAgent({
-      conversation: conversation.trim(),
-      researcherResponses,
-    });
+    const trimmedConversation = conversation.trim();
+
+    const result =
+      requestMode === "clarify"
+        ? await runSynthesizerClarifierAgent({
+            conversation: trimmedConversation,
+          })
+        : await runSynthesizerAgent({
+            conversation: trimmedConversation,
+            researcherResponses: researcherResponses ?? [],
+          });
 
     return new Response(
       JSON.stringify({
         status: "fulfilled",
         result,
         cycle: cycleNumber,
+        mode: requestMode,
       } satisfies SynthesizerApiResponse),
       {
         status: 200,
@@ -60,7 +77,13 @@ export async function POST(request: NextRequest) {
           error instanceof Error
             ? error.message
             : "Unexpected error while running synthesizer agent.",
-        cycle: typeof requestCycle === "number" ? requestCycle : 1,
+        cycle:
+          typeof requestCycle === "number"
+            ? requestCycle
+            : requestMode === "clarify"
+            ? 0
+            : 1,
+        mode: requestMode,
       } satisfies SynthesizerApiResponse),
       {
         status: 500,
@@ -73,22 +96,34 @@ export async function POST(request: NextRequest) {
 function validateRequestBody(
   conversation: unknown,
   researcherResponses: unknown,
-  cycle: unknown
+  cycle: unknown,
+  mode: SynthesizerMode
 ): string | null {
   if (typeof conversation !== "string" || conversation.trim().length === 0) {
     return "conversation must be a non-empty string.";
   }
 
-  if (!Array.isArray(researcherResponses) || researcherResponses.length === 0) {
-    return "researcherResponses must be a non-empty array.";
-  }
+  if (mode === "synthesis") {
+    if (
+      !Array.isArray(researcherResponses) ||
+      researcherResponses.length === 0
+    ) {
+      return "researcherResponses must be a non-empty array.";
+    }
 
-  const invalidIndex = researcherResponses.findIndex(
-    (entry: unknown) => !isValidResearcherResponse(entry)
-  );
+    const invalidIndex = researcherResponses.findIndex(
+      (entry: unknown) => !isValidResearcherResponse(entry)
+    );
 
-  if (invalidIndex >= 0) {
-    return `researcherResponses[${invalidIndex}] is invalid.`;
+    if (invalidIndex >= 0) {
+      return `researcherResponses[${invalidIndex}] is invalid.`;
+    }
+  } else if (
+    typeof researcherResponses !== "undefined" &&
+    researcherResponses !== null &&
+    !Array.isArray(researcherResponses)
+  ) {
+    return "researcherResponses must be omitted or an array when mode is clarify.";
   }
 
   if (

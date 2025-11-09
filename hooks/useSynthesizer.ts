@@ -18,7 +18,10 @@ export default function useSynthesizer() {
   const [errors, setErrors] = useState<Record<number, string>>({});
   const [loadingCycle, setLoadingCycle] = useState<number | null>(null);
   const [latestCycle, setLatestCycle] = useState<number | null>(null);
-  const isLoading = loadingCycle !== null;
+  const [clarifier, setClarifier] = useState<SynthesizerResult | null>(null);
+  const [clarifierError, setClarifierError] = useState<string | null>(null);
+  const [isClarifying, setIsClarifying] = useState(false);
+  const isLoading = loadingCycle !== null || isClarifying;
 
   type ExtendedCallOptions = CallOptions & { cycle?: number };
 
@@ -49,6 +52,7 @@ export default function useSynthesizer() {
             conversation,
             researcherResponses,
             cycle,
+            mode: "synthesis",
           } satisfies SynthesizerRequestBody),
         });
 
@@ -90,7 +94,55 @@ export default function useSynthesizer() {
     setErrors({});
     setLoadingCycle(null);
     setLatestCycle(null);
+    setClarifier(null);
+    setClarifierError(null);
+    setIsClarifying(false);
   }, []);
+
+  const clarify = useCallback(
+    async ({ conversation }: { conversation: string }) => {
+      setIsClarifying(true);
+      setClarifierError(null);
+
+      try {
+        const response = await fetch("/api/synthesizer", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            conversation,
+            mode: "clarify",
+          } satisfies SynthesizerRequestBody),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          throw new Error(
+            typeof errorBody.error === "string"
+              ? errorBody.error
+              : `Synthesizer request failed with status ${response.status}`
+          );
+        }
+
+        const data = (await response.json()) as SynthesizerApiResponse;
+
+        if (data.status !== "fulfilled") {
+          throw new Error(data.error);
+        }
+
+        setClarifier(data.result);
+      } catch (err) {
+        setClarifierError(
+          err instanceof Error ? err.message : "Unexpected synthesizer error"
+        );
+        setClarifier(null);
+      } finally {
+        setIsClarifying(false);
+      }
+    },
+    []
+  );
 
   return {
     syntheses,
@@ -101,6 +153,10 @@ export default function useSynthesizer() {
     isLoading,
     error: latestCycle !== null ? errors[latestCycle] ?? null : null,
     call,
+    clarify,
+    clarifier,
+    clarifierError,
+    isClarifying,
     getSynthesis(cycle: number) {
       return syntheses[cycle] ?? null;
     },
