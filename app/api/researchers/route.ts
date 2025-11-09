@@ -44,6 +44,21 @@ type StreamEvent =
   | { type: "complete"; cycle: number }
   | { type: "error"; message: string; cycle?: number };
 
+function buildConversationWithHistory(
+  baseConversation: string,
+  responses: Array<{ researcherId: string; answer: string }>
+): string {
+  if (responses.length === 0) {
+    return baseConversation;
+  }
+
+  const responsesText = responses
+    .map((r) => `"${r.researcherId}": "${r.answer}"`)
+    .join("\n\n");
+
+  return `${baseConversation}\n\n=== Previous Responses ===\n${responsesText}`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json();
@@ -176,6 +191,15 @@ export async function POST(request: NextRequest) {
             })
           );
 
+          // Build conversation with initial responses
+          const conversationWithInitial = buildConversationWithHistory(
+            conversation,
+            peerResponses.map((p) => ({
+              researcherId: p.researcherId,
+              answer: p.answer,
+            }))
+          );
+
           let feedbackBest: StreamFulfilledResult | null = null;
           let feedbackErrorPosition = 2;
 
@@ -184,7 +208,7 @@ export async function POST(request: NextRequest) {
               try {
                 const result = await runResearcherCritiqueAgent({
                   researcherId,
-                  conversation,
+                  conversation: conversationWithInitial,
                   peerResponses: peerResponses.filter(
                     (peer) => peer.researcherId !== researcherId
                   ),
@@ -246,6 +270,15 @@ export async function POST(request: NextRequest) {
             },
           ];
 
+          // Build conversation with all responses so far
+          const conversationWithFeedback = buildConversationWithHistory(
+            conversation,
+            peerResponsesWithFeedback.map((p) => ({
+              researcherId: p.researcherId,
+              answer: p.answer,
+            }))
+          );
+
           let finalBest: StreamFulfilledResult | null = null;
           let finalErrorPosition = 2;
 
@@ -259,7 +292,7 @@ export async function POST(request: NextRequest) {
                 try {
                   const result = await runResearcherCritiqueAgent({
                     researcherId,
-                    conversation,
+                    conversation: conversationWithFeedback,
                     peerResponses: peerResponsesWithFeedback.filter(
                       (peer) => peer.researcherId !== researcherId
                     ),

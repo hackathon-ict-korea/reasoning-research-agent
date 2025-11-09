@@ -1,22 +1,69 @@
 "use client";
 
-import Loading from "@/components/loading";
+import DotGrid from "@/components/dot-grid";
 import FileUpload, {
   AttachedFile,
   AttachedFilesList,
 } from "@/components/file-upload";
+import TextType from "@/components/text-type";
+import { Spinner } from "@/components/ui/spinner";
 import useResearch from "@/hooks/useResearch";
 import useSynthesizer from "@/hooks/useSynthesizer";
-import { cn } from "@/lib/utils";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { cn, parseMarkdown } from "@/lib/utils";
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const MAX_CYCLES = 3;
 
 const STATUS_LABELS = {
-  done: "완료",
-  "in-progress": "진행중",
-  upcoming: "예정",
+  done: "Done",
+  "in-progress": "In Progress",
+  upcoming: "Upcoming",
+  error: "Error",
 } as const;
+
+// 리뷰어별 파스텔 컬러 매핑
+const RESEARCHER_COLORS: Record<
+  string,
+  { bg: string; border: string; text: string; label: string }
+> = {
+  default: {
+    bg: "bg-slate-50 dark:bg-slate-900/60",
+    border: "border-slate-200 dark:border-slate-700",
+    text: "text-slate-700 dark:text-slate-100",
+    label: "text-slate-500 dark:text-slate-400",
+  },
+  researcherA: {
+    bg: "bg-rose-50 dark:bg-rose-900/30",
+    border: "border-rose-200 dark:border-pink-700",
+    text: "text-rose-900 dark:text-pink-100",
+    label: "text-rose-500 dark:text-pink-400",
+  },
+  researcherB: {
+    bg: "bg-sky-50 dark:bg-sky-900/30",
+    border: "border-sky-200 dark:border-sky-700",
+    text: "text-sky-900 dark:text-sky-100",
+    label: "text-sky-500 dark:text-sky-400",
+  },
+  researcherC: {
+    bg: "bg-emerald-50 dark:bg-emerald-900/30",
+    border: "border-emerald-200 dark:border-emerald-700",
+    text: "text-emerald-900 dark:text-emerald-100",
+    label: "text-emerald-500 dark:text-emerald-400",
+  },
+};
+
+// 리뷰어 ID로 색상 가져오기
+function getResearcherColors(researcherId: string) {
+  return RESEARCHER_COLORS[researcherId] || RESEARCHER_COLORS.default;
+}
 
 type TimelineStatus = keyof typeof STATUS_LABELS;
 
@@ -37,7 +84,6 @@ type TimelineHighlight = {
 
 type TimelineSynthesizer = {
   summary?: string;
-  mediatorNotes?: string;
   highlights?: TimelineHighlight[];
   followUp?: string;
   error?: string;
@@ -55,6 +101,7 @@ type TimelineNode = {
   responses?: TimelineResponse[];
   synthesizer?: TimelineSynthesizer;
   isSynthNode?: boolean;
+  renderContent?: () => ReactNode;
 };
 
 export default function Home() {
@@ -83,9 +130,11 @@ export default function Home() {
     reset: resetSynthesizer,
   } = useSynthesizer();
   const synthesizerKeysRef = useRef<Record<number, string>>({});
+  const pendingAutoStartRef = useRef<number | null>(null);
 
   const [viewMode, setViewMode] = useState<"focus" | "timeline">("focus");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [isSubmissionPending, setIsSubmissionPending] = useState(false);
 
   function handleFilesAdded(newFiles: AttachedFile[]) {
     setAttachedFiles((prev) => [...prev, ...newFiles]);
@@ -97,7 +146,17 @@ export default function Home() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    console.log("conversation", visibleConversation);
+
+    if (isSubmissionPending || isProcessing) {
+      return;
+    }
+    const submittedConversation = visibleConversation.trim();
+
+    if (submittedConversation.length === 0 && attachedFiles.length === 0) {
+      return;
+    }
+
+    setIsSubmissionPending(true);
 
     // Prepare message parts with text and files
     const parts: Array<{
@@ -105,9 +164,15 @@ export default function Home() {
       text?: string;
       data?: string;
       mimeType?: string;
-    }> = [{ type: "text", text: conversation }];
+    }> = [];
 
-    // Add attached files to parts
+    if (submittedConversation.length > 0) {
+      parts.push({
+        type: "text",
+        text: submittedConversation,
+      });
+    }
+
     attachedFiles.forEach((file) => {
       parts.push({
         type: "file",
@@ -116,38 +181,53 @@ export default function Home() {
       });
     });
 
-    // call summarize api(/summarize) and use respond as conversation param
-    const summarizeResponse = await fetch("/api/summarize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [{ role: "user", parts }],
-      }),
-    });
+    try {
+      // call summarize api(/summarize) and use respond as conversation param
+      const summarizeResponse = await fetch("/api/summarize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [{ role: "user", parts }],
+        }),
+      });
 
-    const normalizedConversation = (await summarizeResponse.json()).text;
+      let normalizedConversation = submittedConversation;
+      try {
+        const summarizeJson = await summarizeResponse.json();
+        if (typeof summarizeJson?.text === "string") {
+          normalizedConversation = summarizeJson.text.trim();
+        }
+      } catch (error) {
+        console.error("Failed to parse summarize response", error);
+      }
 
-    if (normalizedConversation.length === 0) {
-      return;
+      if (normalizedConversation.length === 0) {
+        setIsSubmissionPending(false);
+        return;
+      }
+
+      resetResearchers();
+      resetSynthesizer();
+      synthesizerKeysRef.current = {};
+      setCycleConversations({ 1: normalizedConversation });
+      setConversation(normalizedConversation);
+      setAttachedFiles([]); // Clear attached files after submission
+
+      await runSynthesizerClarifier({
+        conversation: normalizedConversation,
+      });
+
+      runResearchers({
+        conversation: normalizedConversation,
+        cycle: 1,
+      });
+      setIsSubmissionPending(false);
+    } catch (error) {
+      console.error("Failed to submit problem definition", error);
+      setIsSubmissionPending(false);
     }
-
-    resetResearchers();
-    resetSynthesizer();
-    synthesizerKeysRef.current = {};
-    setCycleConversations({ 1: normalizedConversation });
-    setConversation(normalizedConversation);
-    setAttachedFiles([]); // Clear attached files after submission
-
-    await runSynthesizerClarifier({
-      conversation: normalizedConversation,
-    });
-
-    runResearchers({
-      conversation: normalizedConversation,
-      cycle: 1,
-    });
   }
 
   useEffect(() => {
@@ -241,52 +321,101 @@ export default function Home() {
     synthesizerLoadingCycle,
   ]);
 
-  function handleStartFollowUpCycle(currentCycle: number) {
-    const nextCycle = currentCycle + 1;
+  const handleStartFollowUpCycle = useCallback(
+    (currentCycle: number) => {
+      const nextCycle = currentCycle + 1;
 
-    if (nextCycle > MAX_CYCLES || cycleConversations[nextCycle]) {
-      return;
+      if (nextCycle > MAX_CYCLES || cycleConversations[nextCycle]) {
+        return;
+      }
+
+      const synthesisForCycle = syntheses[currentCycle];
+      if (!synthesisForCycle) {
+        return;
+      }
+
+      const followUp = synthesisForCycle.followUpQuestion
+        ?.trim()
+        .replace(/\s+/g, " ");
+
+      if (!followUp || followUp.length === 0) {
+        return;
+      }
+
+      const baseConversation =
+        cycleConversations[currentCycle] ?? conversation.trim();
+      const nextConversation = [
+        baseConversation.trim(),
+        "",
+        `Synthesizer Cycle ${currentCycle} Follow-up Question:`,
+        `1. ${followUp}`,
+      ]
+        .join("\n")
+        .trim();
+
+      setCycleConversations((previous) => ({
+        ...previous,
+        [nextCycle]: nextConversation,
+      }));
+      setConversation(nextConversation);
+
+      const nextKeys = { ...synthesizerKeysRef.current };
+      delete nextKeys[nextCycle];
+      synthesizerKeysRef.current = nextKeys;
+
+      runResearchers({
+        conversation: nextConversation,
+        cycle: nextCycle,
+      });
+    },
+    [conversation, cycleConversations, runResearchers, syntheses]
+  );
+
+  useEffect(() => {
+    for (let cycle = 1; cycle < MAX_CYCLES; cycle += 1) {
+      const synthesisForCycle = syntheses[cycle];
+
+      if (!synthesisForCycle) {
+        continue;
+      }
+
+      const followUp = synthesisForCycle.followUpQuestion?.trim();
+
+      if (!followUp || followUp.length === 0) {
+        continue;
+      }
+
+      const nextCycle = cycle + 1;
+
+      if (
+        nextCycle > MAX_CYCLES ||
+        cycleConversations[nextCycle] ||
+        isResearchLoading ||
+        synthesizerLoadingCycle === nextCycle
+      ) {
+        continue;
+      }
+
+      if (pendingAutoStartRef.current === cycle) {
+        break;
+      }
+
+      pendingAutoStartRef.current = cycle;
+
+      setTimeout(() => {
+        pendingAutoStartRef.current = null;
+        handleStartFollowUpCycle(cycle);
+      }, 0);
+      break;
     }
-
-    const synthesisForCycle = syntheses[currentCycle];
-    if (!synthesisForCycle) {
-      return;
-    }
-
-    const followUp = synthesisForCycle.followUpQuestion
-      ?.trim()
-      .replace(/\s+/g, " ");
-
-    if (!followUp || followUp.length === 0) {
-      return;
-    }
-
-    const baseConversation =
-      cycleConversations[currentCycle] ?? conversation.trim();
-    const nextConversation = [
-      baseConversation.trim(),
-      "",
-      `Synthesizer Cycle ${currentCycle} Follow-up Question:`,
-      `1. ${followUp}`,
-    ]
-      .join("\n")
-      .trim();
-
-    setCycleConversations((previous) => ({
-      ...previous,
-      [nextCycle]: nextConversation,
-    }));
-    setConversation(nextConversation);
-
-    const nextKeys = { ...synthesizerKeysRef.current };
-    delete nextKeys[nextCycle];
-    synthesizerKeysRef.current = nextKeys;
-
-    runResearchers({
-      conversation: nextConversation,
-      cycle: nextCycle,
-    });
-  }
+  }, [
+    cycleConversations,
+    handleStartFollowUpCycle,
+    isResearchLoading,
+    pendingAutoStartRef,
+    syntheses,
+    synthesizerLoadingCycle,
+  ]);
 
   const groupedResults = useMemo(() => {
     return results.reduce<Record<number, typeof results>>(
@@ -324,9 +453,31 @@ export default function Home() {
     [groupedResults]
   );
 
+  const finalCycleId = `cycle-${MAX_CYCLES}`;
+
+  const hasFinalCycle = useMemo(
+    () =>
+      orderedCycleNumbers.includes(MAX_CYCLES) ||
+      synthesizerLoadingCycle === MAX_CYCLES,
+    [orderedCycleNumbers, synthesizerLoadingCycle]
+  );
+
+  const hasConclusionStage = useMemo(
+    () =>
+      hasFinalCycle &&
+      (Boolean(syntheses[MAX_CYCLES]) ||
+        Boolean(synthesizerErrors[MAX_CYCLES]) ||
+        synthesizerLoadingCycle === MAX_CYCLES),
+    [hasFinalCycle, syntheses, synthesizerErrors, synthesizerLoadingCycle]
+  );
+
   const activeStageId = useMemo(() => {
     if (synthesizerLoadingCycle !== null) {
       return `cycle-${synthesizerLoadingCycle}`;
+    }
+
+    if (hasConclusionStage) {
+      return "conclusion";
     }
 
     if (orderedCycleNumbers.length > 0) {
@@ -350,6 +501,7 @@ export default function Home() {
   }, [
     groupedResults,
     hasClarifierStage,
+    hasConclusionStage,
     isResearchLoading,
     orderedCycleNumbers,
     synthesizerErrors,
@@ -362,60 +514,220 @@ export default function Home() {
     isSynthesizerClarifying ||
     synthesizerLoadingCycle !== null;
 
-  const renderInputStage = () => (
-    <div className="space-y-6">
-      <form
-        onSubmit={handleSubmit}
-        className={cn(
-          "w-full space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm transition dark:border-zinc-800 dark:bg-zinc-950",
-          isProcessing ? "opacity-70" : ""
-        )}
-      >
-        <div className="flex items-center justify-between">
+  const isSubmissionInFlight = isProcessing || isSubmissionPending;
+  const [focusStageId, setFocusStageId] = useState<string>(activeStageId);
+
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    if (viewMode !== "focus") {
+      if (focusStageId !== activeStageId) {
+        timeoutId = setTimeout(() => {
+          setFocusStageId(activeStageId);
+        }, 0);
+      }
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
+    }
+
+    if (selectedStageId) {
+      if (focusStageId !== selectedStageId) {
+        timeoutId = setTimeout(() => {
+          setFocusStageId(selectedStageId);
+        }, 0);
+      }
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
+    }
+
+    if (focusStageId !== activeStageId) {
+      timeoutId = setTimeout(() => {
+        setFocusStageId(activeStageId);
+      }, 2000);
+    }
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [activeStageId, focusStageId, selectedStageId, viewMode]);
+
+  const renderInputStage = () => {
+    const primaryActionLabel = isSubmissionPending
+      ? "Preparing submission…"
+      : isSynthesizerClarifying
+      ? "Synthesizer is understanding the question…"
+      : isResearchLoading
+      ? "Generating…"
+      : "Run Researchers";
+
+    return (
+      <div className="space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className={cn(
+            "w-full space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-6 shadow-sm transition dark:border-zinc-800 dark:bg-zinc-950",
+            isSubmissionInFlight ? "opacity-70" : ""
+          )}
+        >
           <label htmlFor="conversation" className="block text-sm font-medium">
             Conversation
           </label>
-          <FileUpload onFilesAdded={handleFilesAdded} />
-        </div>
 
-        <AttachedFilesList
-          attachedFiles={attachedFiles}
-          onFileRemoved={handleFileRemoved}
-        />
+          <AttachedFilesList
+            attachedFiles={attachedFiles}
+            onFileRemoved={handleFileRemoved}
+          />
 
-        <textarea
-          id="conversation"
-          value={visibleConversation}
-          onChange={(event) => setVisibleConversation(event.target.value)}
-          placeholder="Summarized discussion or bullet list of findings..."
-          className="h-40 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-black dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-600"
-          required
-          disabled={isProcessing}
-        />
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className="inline-flex items-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {isSynthesizerClarifying
-              ? "Synthesizer가 질문을 이해 중…"
-              : isResearchLoading
-              ? "Generating…"
-              : "Run Researchers"}
-          </button>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            Conversation stays in the browser until you submit.
+          <textarea
+            id="conversation"
+            value={visibleConversation}
+            onChange={(event) => setVisibleConversation(event.target.value)}
+            placeholder="Summarized discussion or bullet list of findings..."
+            style={
+              isSubmissionPending
+                ? {
+                    animation: "borderPulse 3s ease-in-out infinite",
+                  }
+                : undefined
+            }
+            className={cn(
+              "h-40 w-full resize-y rounded-lg border bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition",
+              isSubmissionPending
+                ? "border-indigo-400 dark:border-indigo-500"
+                : "border-zinc-300 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:focus:border-zinc-500 dark:focus:ring-zinc-600",
+              "dark:bg-black dark:text-zinc-100"
+            )}
+            required
+            disabled={isSubmissionInFlight}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              Conversation stays in the browser until you submit.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={isSubmissionInFlight}
+                className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+              >
+                {isSubmissionInFlight ? (
+                  <>
+                    <Spinner
+                      size="sm"
+                      className="text-white dark:text-zinc-900"
+                      aria-hidden="true"
+                    />
+                    <span>{primaryActionLabel}</span>
+                  </>
+                ) : (
+                  primaryActionLabel
+                )}
+              </button>
+              <FileUpload onFilesAdded={handleFilesAdded} />
+            </div>
+          </div>
+        </form>
+        {researcherError ? (
+          <div className="w-full rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            {researcherError}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderTimelineInputStage = () => {
+    const timelineActionLabel = isSubmissionPending
+      ? "Preparing…"
+      : isProcessing
+      ? "Running…"
+      : "Run";
+
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+        <div className="space-y-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            Quick prompt
           </span>
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-inner transition focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/70 dark:focus-within:border-zinc-500">
+            <textarea
+              value={visibleConversation}
+              onChange={(event) => setVisibleConversation(event.target.value)}
+              placeholder="Summarize the conversation or drop a quick hypothesis..."
+              className="h-32 w-full resize-y rounded-lg border-0 bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              required
+              disabled={isSubmissionInFlight}
+            />
+          </div>
+          {attachedFiles.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {attachedFiles.map((file, index) => (
+                <button
+                  key={`${file.name}-${index}`}
+                  type="button"
+                  onClick={() => handleFileRemoved(index)}
+                  className="group inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-xs text-zinc-600 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+                  title={`Remove ${file.name}`}
+                >
+                  <span className="max-w-[160px] truncate font-medium group-hover:text-zinc-800 dark:group-hover:text-zinc-50">
+                    {file.name}
+                  </span>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                    className="h-3.5 w-3.5 text-zinc-400 transition group-hover:text-zinc-700 dark:text-zinc-400 dark:group-hover:text-zinc-200"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18 18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            Runs the full researcher workflow with this prompt.
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={isSubmissionInFlight}
+              className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:bg-zinc-400 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              {isSubmissionInFlight ? (
+                <>
+                  <Spinner
+                    size="sm"
+                    className="text-white dark:text-zinc-900"
+                    aria-hidden="true"
+                  />
+                  <span>{timelineActionLabel}</span>
+                </>
+              ) : (
+                timelineActionLabel
+              )}
+            </button>
+            <FileUpload onFilesAdded={handleFilesAdded} />
+          </div>
         </div>
       </form>
-      {researcherError ? (
-        <div className="w-full rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {researcherError}
-        </div>
-      ) : null}
-    </div>
-  );
+    );
+  };
 
   const renderClarifierStage = () => (
     <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
@@ -425,7 +737,7 @@ export default function Home() {
             Synthesizer Clarifier
           </span>
           <h3 className="text-xl font-semibold">
-            첫 질문 이해 &amp; 팔로업 제안
+            Understand the First Question &amp; Suggest Follow-ups
           </h3>
         </div>
         <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
@@ -435,33 +747,28 @@ export default function Home() {
 
       {initialClarifierError ? (
         <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
-          Synthesizer 오류: {initialClarifierError}
+          Synthesizer error: {initialClarifierError}
         </p>
       ) : isSynthesizerClarifying ? (
-        <p className="text-sm text-indigo-700 dark:text-indigo-200">
-          Synthesizer가 질문을 파악하는 중입니다…
-        </p>
+        <TextType
+          text="Synthesizer is analyzing the question…"
+          typingSpeed={75}
+          pauseDuration={1500}
+          showCursor={true}
+          cursorCharacter="|"
+          loop={false}
+          className="text-sm text-indigo-700 dark:text-indigo-200"
+        />
       ) : initialClarifier ? (
         <div className="space-y-4 text-sm leading-6">
           <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
             {initialClarifier.summary}
           </p>
 
-          {initialClarifier.mediatorNotes ? (
-            <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-              <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                참고 메모
-              </h4>
-              <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                {initialClarifier.mediatorNotes}
-              </p>
-            </div>
-          ) : null}
-
           {initialClarifier.followUpQuestion ? (
             <div className="rounded-lg border border-indigo-200 bg-white px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/60">
               <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                추천 팔로업 질문
+                Recommended Follow-up Question
               </h4>
               <p className="mt-1 text-indigo-900 dark:text-indigo-100">
                 {initialClarifier.followUpQuestion}
@@ -473,23 +780,23 @@ export default function Home() {
     </article>
   );
 
-  const renderCycleStage = (cycleNumber: number) => {
+  const renderCycleStage = (
+    cycleNumber: number,
+    options?: { hideSynthesizer?: boolean }
+  ) => {
+    const hideSynthesizer = options?.hideSynthesizer ?? false;
     const cycleEntries = groupedResults[cycleNumber] ?? [];
     const synthesizerForCycle = syntheses[cycleNumber];
     const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
     const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
     const isFollowUpCycle = cycleNumber > 1;
-    const followUpQuestion =
-      synthesizerForCycle?.followUpQuestion?.trim() ?? "";
+    const isFinalCycle = cycleNumber === MAX_CYCLES;
+    const followUpQuestion = isFinalCycle
+      ? ""
+      : synthesizerForCycle?.followUpQuestion?.trim() ?? "";
     const nextCycle = cycleNumber + 1;
     const nextCycleConversation =
       nextCycle <= MAX_CYCLES ? cycleConversations[nextCycle] : undefined;
-    const canTriggerNextCycle =
-      followUpQuestion.length > 0 &&
-      cycleNumber < MAX_CYCLES &&
-      !nextCycleConversation &&
-      !isResearchLoading &&
-      synthesizerLoadingCycle !== nextCycle;
     const isNextCycleInFlight =
       cycleNumber < MAX_CYCLES &&
       Boolean(nextCycleConversation) &&
@@ -502,12 +809,11 @@ export default function Home() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">
-              {isFollowUpCycle
-                ? `Cycle ${cycleNumber} — Follow-up Analysis`
-                : "Cycle 1 — Primary Analysis"}
+              {isFollowUpCycle ? `Follow-up Analysis` : "Primary Analysis"}
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              연구자 응답과 Synthesizer 요약을 한 화면에서 비교합니다.
+              Compare researcher responses and Synthesizer summaries in one
+              view.
             </p>
           </div>
           <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
@@ -518,50 +824,75 @@ export default function Home() {
         <div className="flex w-full flex-col gap-6">
           {cycleEntries.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white p-5 text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-              연구자 답변을 수집하는 중입니다…
+              Collecting researcher responses…
             </div>
           ) : null}
           {cycleEntries.map((entry) => {
             const label =
               entry.phase === "initial"
-                ? `기본답장#${entry.phasePosition}`
-                : `피드백답장#${entry.phasePosition}`;
+                ? `InitialResponse#${entry.phasePosition}`
+                : `FeedbackResponse#${entry.phasePosition}`;
+
+            const researcherId =
+              entry.status === "fulfilled"
+                ? entry.result.researcherId
+                : entry.researcherId;
+            const colors = getResearcherColors(researcherId);
 
             return entry.status === "fulfilled" ? (
               <article
                 key={`${entry.cycle}-${entry.result.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="flex h-full flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                className={cn(
+                  "flex h-full flex-col justify-between rounded-xl border p-5 shadow-sm transition-all",
+                  colors.border,
+                  colors.bg
+                )}
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">
-                      {label}
-                    </span>
                     <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                        Cycle {entry.cycle}
-                      </span>
-                      <h3 className="text-lg font-semibold capitalize">
-                        {entry.result.researcherId}
+                      <h3
+                        className={cn(
+                          "text-lg font-bold capitalize",
+                          colors.label
+                        )}
+                      >
+                        {entry.result.researcherId.slice(0, -1) +
+                          " " +
+                          entry.result.researcherId.slice(-1)}
                       </h3>
                     </div>
+                    <span
+                      className={cn(
+                        "text-xs font-medium uppercase",
+                        colors.label
+                      )}
+                    >
+                      {label}
+                    </span>
                   </div>
-                  <p className="mt-4 text-sm leading-6 text-zinc-800 dark:text-zinc-200">
-                    {entry.result.answer}
-                  </p>
+                  <p
+                    className={cn(
+                      "mt-4 text-sm leading-6 whitespace-break-spaces",
+                      colors.text
+                    )}
+                    dangerouslySetInnerHTML={{
+                      __html: parseMarkdown(entry.result.answer),
+                    }}
+                  />
                 </div>
               </article>
             ) : (
               <article
                 key={`${entry.cycle}-${entry.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase text-amber-600 dark:text-amber-300">
+                  <span className="text-xs font-medium uppercase text-red-600 dark:text-red-300">
                     {label}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-500 dark:text-amber-300/80">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-red-500 dark:text-red-300/80">
                       Cycle {entry.cycle}
                     </span>
                     <h3 className="text-lg font-semibold capitalize">
@@ -576,129 +907,206 @@ export default function Home() {
             );
           })}
 
-          {(synthesizerErrorForCycle ||
-            isCycleLoading ||
-            synthesizerForCycle) && (
-            <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-                    Synthesizer
-                  </span>
-                  <h3 className="text-xl font-semibold">
-                    {isFollowUpCycle ? "Follow-up Summary" : "Mediator Summary"}
-                  </h3>
-                </div>
-                <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
-                  {isFollowUpCycle ? "Cycle Follow-up" : "Collective View"}
-                </div>
-              </div>
-
-              {synthesizerErrorForCycle ? (
-                <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
-                  Synthesizer 오류: {synthesizerErrorForCycle}
-                </p>
-              ) : isCycleLoading ? (
-                <p className="text-sm text-indigo-700 dark:text-indigo-200">
-                  Synthesizer가 연구자 답변을 통합하는 중입니다…
-                </p>
-              ) : synthesizerForCycle ? (
-                <div className="space-y-4 text-sm leading-6">
-                  <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
-                    {synthesizerForCycle.summary}
-                  </p>
-
-                  {synthesizerForCycle.mediatorNotes ? (
-                    <div className="rounded-lg border border-indigo-200 bg-white/70 px-4 py-3 dark:border-indigo-600 dark:bg-indigo-900/40">
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        중재 메모
-                      </h4>
-                      <p className="mt-1 text-indigo-800 dark:text-indigo-100">
-                        {synthesizerForCycle.mediatorNotes}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {synthesizerForCycle.highlights &&
-                  synthesizerForCycle.highlights.length > 0 ? (
-                    <div>
-                      <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                        핵심 하이라이트
-                      </h4>
-                      <ul className="mt-2 space-y-2">
-                        {synthesizerForCycle.highlights.map(
-                          (highlight, index) => (
-                            <li
-                              key={`${highlight.title}-${index}`}
-                              className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
-                            >
-                              <p className="font-semibold text-indigo-800 dark:text-indigo-100">
-                                {highlight.title}
-                              </p>
-                              <p className="text-indigo-700 dark:text-indigo-100">
-                                {highlight.detail}
-                              </p>
-                            </li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  ) : null}
-
+          {!hideSynthesizer &&
+            (synthesizerErrorForCycle ||
+              isCycleLoading ||
+              synthesizerForCycle) && (
+              <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
+                <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
-                      Follow-up 질문
-                    </h4>
-                    {followUpQuestion.length > 0 ? (
-                      <div className="mt-2 flex items-start gap-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
-                        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white dark:bg-indigo-400">
-                          1
-                        </span>
-                        <span>{followUpQuestion}</span>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
-                        No follow-up question provided for this cycle.
-                      </p>
-                    )}
+                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                      Synthesizer
+                    </span>
+                    <h3 className="text-xl font-semibold">
+                      {isFollowUpCycle
+                        ? "Follow-up Summary"
+                        : "Mediator Summary"}
+                    </h3>
                   </div>
-
-                  {canTriggerNextCycle ? (
-                    <button
-                      type="button"
-                      onClick={() => handleStartFollowUpCycle(cycleNumber)}
-                      className="mt-4 inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:focus:ring-indigo-300 dark:focus:ring-offset-zinc-900"
-                    >
-                      Run Cycle {nextCycle}
-                    </button>
-                  ) : null}
+                  <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
+                    {isFollowUpCycle ? "Cycle Follow-up" : "Collective View"}
+                  </div>
                 </div>
-              ) : null}
 
-              {isNextCycleInFlight ? (
-                <p className="mt-4 text-xs text-indigo-600 dark:text-indigo-200">
-                  Cycle {nextCycle} is starting—researchers are preparing their
-                  next-round analyses.
-                </p>
-              ) : null}
-            </article>
-          )}
+                {synthesizerErrorForCycle ? (
+                  <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
+                    Synthesizer error: {synthesizerErrorForCycle}
+                  </p>
+                ) : isCycleLoading ? (
+                  <p className="text-sm text-indigo-700 dark:text-indigo-200">
+                    Synthesizer is synthesizing researcher answers…
+                  </p>
+                ) : synthesizerForCycle ? (
+                  <div className="space-y-4 text-sm leading-6">
+                    <p className="text-base font-medium text-indigo-800 dark:text-indigo-100">
+                      {synthesizerForCycle.summary}
+                    </p>
+
+                    {synthesizerForCycle.highlights &&
+                    synthesizerForCycle.highlights.length > 0 ? (
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                          Key Highlights
+                        </h4>
+                        <ul className="mt-2 space-y-2">
+                          {synthesizerForCycle.highlights.map(
+                            (highlight, index) => (
+                              <li
+                                key={`${highlight.title}-${index}`}
+                                className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
+                              >
+                                <p className="font-semibold text-indigo-800 dark:text-indigo-100">
+                                  {highlight.title}
+                                </p>
+                                <p className="text-indigo-700 dark:text-indigo-100">
+                                  {highlight.detail}
+                                </p>
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {!isFinalCycle ? (
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                          Follow-up Question
+                        </h4>
+                        {followUpQuestion.length > 0 ? (
+                          <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                            <span>{followUpQuestion}</span>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-indigo-700 opacity-80 dark:text-indigo-200">
+                            No follow-up question provided for this cycle.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {isNextCycleInFlight ? (
+                  <p className="mt-4 text-xs text-indigo-600 dark:text-indigo-200">
+                    Cycle {nextCycle} is starting—researchers are preparing
+                    their next-round analyses.
+                  </p>
+                ) : null}
+              </article>
+            )}
         </div>
       </div>
     );
   };
 
-  const stages = [
+  const renderConclusionStage = () => {
+    const cycleNumber = MAX_CYCLES;
+    const synthesizerForCycle = syntheses[cycleNumber];
+    const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
+    const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
+    const cycleEntries = groupedResults[cycleNumber] ?? [];
+    const fulfilledCount = cycleEntries.filter(
+      (entry) => entry.status === "fulfilled"
+    ).length;
+    const errorCount = cycleEntries.length - fulfilledCount;
+
+    if (!synthesizerForCycle && !synthesizerErrorForCycle && !isCycleLoading) {
+      return (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+          No conclusion yet. The final synthesis will generate automatically
+          once prior cycles finish.
+        </div>
+      );
+    }
+
+    return (
+      <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 text-indigo-900 shadow-sm transition dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-100">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+              Final Outcome
+            </span>
+            <h3 className="text-xl font-semibold">
+              Cycle {cycleNumber} Conclusion
+            </h3>
+          </div>
+          <div className="rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-medium text-indigo-600 dark:border-indigo-500 dark:bg-indigo-900 dark:text-indigo-200">
+            {fulfilledCount > 0
+              ? `Responses ${fulfilledCount}${
+                  errorCount > 0 ? ` · Errors ${errorCount}` : ""
+                }`
+              : "Responses pending"}
+          </div>
+        </div>
+
+        {synthesizerErrorForCycle ? (
+          <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/40 dark:text-red-200">
+            Synthesizer error: {synthesizerErrorForCycle}
+          </p>
+        ) : isCycleLoading ? (
+          <p className="text-sm text-indigo-700 dark:text-indigo-200">
+            Synthesizer is synthesizing researcher answers…
+          </p>
+        ) : synthesizerForCycle ? (
+          <div className="space-y-4 text-sm leading-6">
+            {synthesizerForCycle.summary ? (
+              <p className="text-base font-medium text-indigo-800 dark:text-indigo-100 whitespace-pre-wrap">
+                {synthesizerForCycle.summary}
+              </p>
+            ) : null}
+
+            {synthesizerForCycle.highlights &&
+            synthesizerForCycle.highlights.length > 0 ? (
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                  Key Highlights
+                </h4>
+                <ul className="mt-2 space-y-2">
+                  {synthesizerForCycle.highlights.map((highlight, index) => (
+                    <li
+                      key={`${highlight.title}-${index}`}
+                      className="rounded-lg border border-indigo-200 bg-white/60 px-4 py-2 dark:border-indigo-600 dark:bg-indigo-900/40"
+                    >
+                      <p className="font-semibold text-indigo-800 dark:text-indigo-100">
+                        {highlight.title}
+                      </p>
+                      <p className="text-indigo-700 dark:text-indigo-100">
+                        {highlight.detail}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {synthesizerForCycle.followUpQuestion ? (
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-indigo-500 dark:text-indigo-300">
+                  Additional Considerations
+                </h4>
+                <div className="mt-2 rounded-lg border border-indigo-200 bg-white/70 px-4 py-2 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                  <span>{synthesizerForCycle.followUpQuestion}</span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+    );
+  };
+
+  const baseStages = [
     {
       id: "input",
-      title: "문제 정의",
+      title: "Problem Definition",
       subtitle: "Conversation",
       content: renderInputStage(),
     },
   ];
 
   if (hasClarifierStage) {
-    stages.push({
+    baseStages.push({
       id: "clarifier",
       title: "Clarifier",
       subtitle: "Cycle 0",
@@ -707,7 +1115,7 @@ export default function Home() {
   }
 
   orderedCycleNumbers.forEach((cycleNumber) => {
-    stages.push({
+    baseStages.push({
       id: `cycle-${cycleNumber}`,
       title: cycleNumber > 1 ? `Cycle ${cycleNumber}` : "Cycle 1",
       subtitle: cycleNumber > 1 ? "Follow-up" : "Primary",
@@ -715,21 +1123,49 @@ export default function Home() {
     });
   });
 
+  const focusStages = (() => {
+    const mapped = baseStages.map((stage) => {
+      if (stage.id === finalCycleId) {
+        return {
+          ...stage,
+          content: renderCycleStage(MAX_CYCLES, { hideSynthesizer: true }),
+        };
+      }
+      return stage;
+    });
+
+    if (hasConclusionStage) {
+      mapped.push({
+        id: "conclusion",
+        title: "Conclusion",
+        subtitle: `Cycle ${MAX_CYCLES}`,
+        content: renderConclusionStage(),
+      });
+    }
+
+    return mapped;
+  })();
+
+  const stages = baseStages;
+
   const progressStageIndex = Math.max(
     0,
     stages.findIndex((stage) => stage.id === activeStageId)
   );
 
   const preferredStageId =
-    viewMode === "focus" &&
-    selectedStageId &&
-    stages.some((stage) => stage.id === selectedStageId)
-      ? selectedStageId
+    viewMode === "focus"
+      ? selectedStageId &&
+        focusStages.some((stage) => stage.id === selectedStageId)
+        ? selectedStageId
+        : focusStages.some((stage) => stage.id === focusStageId)
+        ? focusStageId
+        : focusStages[0]?.id ?? focusStageId
       : activeStageId;
 
   const focusStageIndex = Math.max(
     0,
-    stages.findIndex((stage) => stage.id === preferredStageId)
+    focusStages.findIndex((stage) => stage.id === preferredStageId)
   );
 
   const highlightedStageId =
@@ -738,7 +1174,7 @@ export default function Home() {
   const timelineNodes: TimelineNode[] = [];
 
   stages.forEach((stage, stageIndex) => {
-    const status: TimelineStatus =
+    const stageProgressStatus: TimelineStatus =
       stageIndex < progressStageIndex
         ? "done"
         : stageIndex === progressStageIndex
@@ -754,43 +1190,56 @@ export default function Home() {
       const content =
         conversationSource.length > 0
           ? conversationSource
-          : "대화 내용을 입력하고 연구 사이클을 시작하세요.";
+          : "Enter the conversation to start the research cycle.";
+      let nodeStatus: TimelineStatus = stageProgressStatus;
+      if (conversationSource.length === 0) {
+        nodeStatus = "upcoming";
+      } else if (isProcessing) {
+        nodeStatus = "in-progress";
+      } else {
+        nodeStatus = "done";
+      }
+
       const footer =
         conversationSource.length > 0
           ? isProcessing
-            ? "상태: 실행 중 · 요약 반영 대기"
-            : "상태: 입력 완료"
-          : "상태: 대기";
+            ? "Status: Running · Awaiting summary"
+            : "Status: Submitted"
+          : "Status: Pending";
 
       timelineNodes.push({
         id: stage.id,
         stageId: stage.id,
-        status,
+        status: nodeStatus,
         title: stage.title,
         subtitle: stage.subtitle,
         content,
         footer,
+        renderContent: renderTimelineInputStage,
       });
       return;
     }
 
     if (stage.id === "clarifier") {
-      let content = "Clarifier가 준비 중입니다.";
-      let footer = "상태: 대기";
+      let content = "Clarifier is getting ready.";
+      let footer = "Status: Pending";
+      let nodeStatus: TimelineStatus = "upcoming";
       let synthesizerDetails: TimelineSynthesizer | undefined;
 
       if (initialClarifierError) {
         content = initialClarifierError.trim();
-        footer = "상태: 오류";
+        footer = "Status: Error";
+        nodeStatus = "error";
       } else if (isSynthesizerClarifying) {
-        content = "Synthesizer가 첫 질문을 해석하는 중입니다…";
-        footer = "상태: 진행중";
+        content = "Synthesizer is summarizing the submitted materials…";
+        footer = "Status: In Progress";
+        nodeStatus = "in-progress";
       } else if (initialClarifier) {
         content = initialClarifier.summary.trim();
-        footer = "상태: 완료";
+        footer = "Status: Complete";
+        nodeStatus = "done";
         synthesizerDetails = {
           summary: initialClarifier.summary.trim(),
-          mediatorNotes: initialClarifier.mediatorNotes?.trim(),
           followUp: initialClarifier.followUpQuestion?.trim(),
           loading: false,
         };
@@ -799,7 +1248,7 @@ export default function Home() {
       timelineNodes.push({
         id: stage.id,
         stageId: stage.id,
-        status,
+        status: nodeStatus,
         title: stage.title,
         subtitle: stage.subtitle,
         content,
@@ -820,79 +1269,39 @@ export default function Home() {
       const synthesizerForCycle = syntheses[cycleNumber];
       const synthesizerErrorForCycle = synthesizerErrors[cycleNumber];
       const isCycleLoading = synthesizerLoadingCycle === cycleNumber;
-      const followUp = synthesizerForCycle?.followUpQuestion?.trim();
+      const isFinalCycle = cycleNumber === MAX_CYCLES;
+      const followUp = !isFinalCycle
+        ? synthesizerForCycle?.followUpQuestion?.trim()
+        : undefined;
 
-      const responses: TimelineResponse[] = cycleEntries.map((entry) => {
-        const label =
-          entry.phase === "initial"
-            ? `기본답장#${entry.phasePosition}`
-            : `피드백답장#${entry.phasePosition}`;
-
-        if (entry.status === "fulfilled") {
-          return {
-            id: `${entry.cycle}-${entry.result.researcherId}-${entry.phase}-${entry.phasePosition}`,
-            label,
-            researcherId: entry.result.researcherId,
-            content: entry.result.answer,
-            confidence: entry.result.confidenceScore,
-            isError: false,
-            cycleNumber: entry.cycle,
-          } satisfies TimelineResponse;
-        }
-
-        return {
-          id: `${entry.cycle}-${entry.researcherId}-${entry.phase}-${entry.phasePosition}`,
-          label,
-          researcherId: entry.researcherId,
-          content: entry.error,
-          isError: true,
-          cycleNumber: entry.cycle,
-        } satisfies TimelineResponse;
-      });
-
-      let cycleContent = "Cycle 정보를 준비 중입니다.";
+      let cycleContent = "Cycle information is being prepared.";
       if (cycleEntries.length > 0) {
         if (fulfilledCount > 0) {
-          cycleContent = `연구자 ${fulfilledCount}명 응답 확보.`;
+          cycleContent = `Collected ${fulfilledCount} researcher responses.`;
         } else {
-          cycleContent = `연구자 응답 ${cycleEntries.length}건을 수집하는 중입니다.`;
+          cycleContent = `Collecting ${cycleEntries.length} researcher responses.`;
         }
       } else if (isResearchLoading) {
-        cycleContent = `Cycle ${cycleNumber} 연구자 답변을 수집 중입니다…`;
+        cycleContent = `Collecting researcher responses for Cycle ${cycleNumber}…`;
       } else {
-        cycleContent = `Cycle ${cycleNumber} 결과를 대기 중입니다.`;
+        cycleContent = `Waiting for Cycle ${cycleNumber} results.`;
       }
 
       const cycleFooterParts: string[] = [];
       if (cycleEntries.length > 0) {
         cycleFooterParts.push(
-          `응답 ${fulfilledCount}${
-            errorCount > 0 ? ` · 오류 ${errorCount}` : ""
+          `Responses ${fulfilledCount}${
+            errorCount > 0 ? ` · Errors ${errorCount}` : ""
           }`
         );
       } else {
-        cycleFooterParts.push("응답 대기");
+        cycleFooterParts.push("Responses pending");
       }
       if (followUp) {
-        cycleFooterParts.push("Follow-up 준비");
+        cycleFooterParts.push("Follow-up ready");
       }
-      const cycleFooter =
-        cycleFooterParts.join(" · ") || `상태: ${STATUS_LABELS[status]}`;
-
-      timelineNodes.push({
-        id: stage.id,
-        stageId: stage.id,
-        status,
-        title: stage.title,
-        subtitle: stage.subtitle,
-        content: cycleContent,
-        footer: cycleFooter,
-        responses,
-      });
-
       const synthesizerDetails: TimelineSynthesizer = {
         summary: synthesizerForCycle?.summary?.trim(),
-        mediatorNotes: synthesizerForCycle?.mediatorNotes?.trim(),
         highlights: synthesizerForCycle?.highlights?.map((highlight) => ({
           title: highlight.title,
           detail: highlight.detail,
@@ -902,46 +1311,70 @@ export default function Home() {
         loading: isCycleLoading,
       };
 
-      let synthContent = "Synthesizer 결과를 대기 중입니다.";
+      let synthContent = cycleContent;
       if (synthesizerErrorForCycle) {
-        synthContent = "Synthesizer에서 오류가 발생했습니다.";
+        synthContent = "Synthesizer encountered an error.";
       } else if (isCycleLoading) {
-        synthContent = "Synthesizer가 연구자 답변을 통합하는 중입니다…";
+        synthContent = "Synthesizer is synthesizing researcher answers…";
       } else if (synthesizerDetails.summary) {
         synthContent = synthesizerDetails.summary;
       } else if (followUp) {
-        synthContent = "Follow-up 질문이 준비되었습니다.";
+        synthContent = "Follow-up question is ready.";
       }
 
       const synthFooterParts: string[] = [];
+      const cycleFooterLabel = cycleFooterParts.join(" · ");
+      if (cycleFooterLabel.length > 0) {
+        synthFooterParts.push(cycleFooterLabel);
+      }
+      let synthStatus: TimelineStatus = stageProgressStatus;
       if (synthesizerErrorForCycle) {
-        synthFooterParts.push("상태: 오류");
+        synthFooterParts.push("Status: Error");
+        synthStatus = "error";
       } else if (synthesizerDetails.summary) {
-        synthFooterParts.push("상태: 완료");
+        synthFooterParts.push("Status: Complete");
+        synthStatus = "done";
       } else if (isCycleLoading) {
-        synthFooterParts.push("상태: 진행중");
+        synthFooterParts.push("Status: In Progress");
+        synthStatus = "in-progress";
       } else {
-        synthFooterParts.push(`상태: ${STATUS_LABELS[status]}`);
+        synthFooterParts.push(`Status: ${STATUS_LABELS[stageProgressStatus]}`);
       }
       if (followUp) {
-        synthFooterParts.push("Follow-up 준비");
+        synthFooterParts.push("Follow-up ready");
       }
       const synthFooter = synthFooterParts.join(" · ");
 
-      timelineNodes.push({
-        id: `${stage.id}-synth`,
-        stageId: stage.id,
-        status,
-        title:
-          cycleNumber > 1
-            ? `Cycle ${cycleNumber} Synthesizer`
-            : "Cycle 1 Synthesizer",
-        subtitle: "Synthesizer",
-        content: synthContent,
-        footer: synthFooter,
-        synthesizer: synthesizerDetails,
-        isSynthNode: true,
-      });
+      if (isFinalCycle) {
+        if (hasConclusionStage) {
+          timelineNodes.push({
+            id: "conclusion",
+            stageId: "conclusion",
+            status: synthStatus,
+            title: `Cycle ${cycleNumber} Conclusion`,
+            subtitle: "Conclusion",
+            content: synthContent,
+            footer: synthFooter,
+            synthesizer: synthesizerDetails,
+            isSynthNode: true,
+          });
+        }
+      } else {
+        timelineNodes.push({
+          id: `${stage.id}-synth`,
+          stageId: stage.id,
+          status: synthStatus,
+          title:
+            cycleNumber > 1
+              ? `Cycle ${cycleNumber} Synthesizer`
+              : "Cycle 1 Synthesizer",
+          subtitle: "Synthesizer",
+          content: synthContent,
+          footer: synthFooter,
+          synthesizer: synthesizerDetails,
+          isSynthNode: true,
+        });
+      }
 
       return;
     }
@@ -949,11 +1382,11 @@ export default function Home() {
     timelineNodes.push({
       id: stage.id,
       stageId: stage.id,
-      status,
+      status: stageProgressStatus,
       title: stage.title,
       subtitle: stage.subtitle,
-      content: "세부 정보를 준비 중입니다.",
-      footer: `상태: ${STATUS_LABELS[status]}`,
+      content: "Preparing details.",
+      footer: `Status: ${STATUS_LABELS[stageProgressStatus]}`,
     });
   });
 
@@ -963,7 +1396,7 @@ export default function Home() {
         className="flex min-h-[420px] gap-0 transition-transform duration-700 ease-[cubic-bezier(0.4,0.0,0.2,1)]"
         style={{ transform: `translateX(-${focusStageIndex * 100}%)` }}
       >
-        {stages.map((stage) => (
+        {focusStages.map((stage) => (
           <section
             key={stage.id}
             className="flex min-h-full w-full shrink-0 flex-col gap-6 px-6 transition-all"
@@ -988,7 +1421,7 @@ export default function Home() {
       return (
         <div className="relative w-full rounded-3xl border border-zinc-200 bg-white shadow-lg transition dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex min-h-[420px] items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
-            타임라인에 표시할 단계가 없습니다.
+            No stages available for the timeline.
           </div>
         </div>
       );
@@ -1000,11 +1433,14 @@ export default function Home() {
           {timelineNodes.map((node, index) => {
             const isComplete = node.status === "done";
             const isActive = node.status === "in-progress";
+            const isError = node.status === "error";
             const isClarifierNode = node.id === "clarifier";
             const isCycleNode = node.id.startsWith("cycle-");
             const isSynthNode = node.isSynthNode;
             const cardWidthClass =
-              isClarifierNode || isCycleNode || isSynthNode
+              isCycleNode || isSynthNode
+                ? "w-[640px]"
+                : isClarifierNode
                 ? "w-[448px]"
                 : "w-[320px]";
 
@@ -1014,7 +1450,9 @@ export default function Home() {
                   className={cn(
                     "flex shrink-0 flex-col gap-4 rounded-2xl border px-5 py-4 shadow-sm transition",
                     cardWidthClass,
-                    isComplete
+                    isError
+                      ? "border-red-400 bg-red-50/70 dark:border-red-500 dark:bg-red-900/40"
+                      : isComplete
                       ? "border-emerald-400 bg-emerald-50/70 dark:border-emerald-500 dark:bg-emerald-900/40"
                       : isActive
                       ? "border-indigo-400 bg-indigo-50/80 dark:border-indigo-500 dark:bg-indigo-900/40"
@@ -1033,7 +1471,9 @@ export default function Home() {
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-xs font-medium",
-                        isComplete
+                        isError
+                          ? "bg-red-500 text-white dark:bg-red-600"
+                          : isComplete
                           ? "bg-emerald-500 text-white"
                           : isActive
                           ? "bg-amber-500 text-white"
@@ -1045,95 +1485,67 @@ export default function Home() {
                   </div>
 
                   <div className="space-y-4">
-                    {node.content ? (
+                    {node.renderContent ? (
+                      node.renderContent()
+                    ) : node.content ? (
                       <p className="text-sm leading-snug text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap">
                         {node.content}
                       </p>
                     ) : null}
 
-                    {node.responses && node.responses.length > 0 ? (
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                          연구자 응답
-                        </h4>
-                        <div className="space-y-2">
-                          {node.responses.map((response) => (
-                            <div
-                              key={response.id}
-                              className={cn(
-                                "rounded-xl border px-4 py-3 text-sm",
-                                response.isError
-                                  ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100"
-                                  : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-100"
-                              )}
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide">
-                                <span className="text-zinc-400 dark:text-zinc-500">
-                                  {response.label}
-                                </span>
-                                <span className="text-zinc-500 dark:text-zinc-300">
-                                  {response.researcherId}
-                                </span>
-                              </div>
-                              <p className="mt-2 whitespace-pre-wrap text-sm leading-snug">
-                                {response.content}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
                     {node.synthesizer ? (
                       <div className="space-y-2">
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                          Synthesizer
-                        </h4>
-                        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 dark:border-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-100">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                            Synthesizer
+                          </h4>
+                          {node.isSynthNode ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedStageId(node.stageId);
+                                setViewMode("focus");
+                              }}
+                              className="inline-flex items-center rounded-full border border-indigo-300 px-3 py-1 text-xs font-medium text-indigo-600 transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 dark:border-indigo-500 dark:text-indigo-200 dark:hover:border-indigo-400 dark:hover:bg-indigo-900/60 dark:hover:text-indigo-100"
+                            >
+                              Open full review
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="space-y-3 text-sm leading-snug text-indigo-800 dark:text-indigo-100">
                           {node.synthesizer.error ? (
                             <p className="text-red-500 dark:text-red-300">
-                              Synthesizer 오류: {node.synthesizer.error}
+                              Synthesizer error: {node.synthesizer.error}
                             </p>
                           ) : node.synthesizer.loading ? (
                             <p>
-                              Synthesizer가 연구자 답변을 통합하는 중입니다…
+                              Synthesizer is synthesizing researcher answers…
                             </p>
                           ) : (
-                            <div className="space-y-3">
+                            <>
                               {node.synthesizer.summary ? (
-                                <p className="whitespace-pre-wrap text-sm font-medium leading-snug">
+                                <p className="whitespace-pre-wrap font-medium">
                                   {node.synthesizer.summary}
                                 </p>
-                              ) : null}
-
-                              {node.synthesizer.mediatorNotes ? (
-                                <div className="rounded-lg border border-indigo-200 bg-white/70 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-500 dark:bg-indigo-900/60 dark:text-indigo-100">
-                                  <span className="font-semibold uppercase tracking-wide">
-                                    중재 메모
-                                  </span>
-                                  <p className="mt-1 whitespace-pre-wrap text-sm leading-snug">
-                                    {node.synthesizer.mediatorNotes}
-                                  </p>
-                                </div>
                               ) : null}
 
                               {node.synthesizer.highlights &&
                               node.synthesizer.highlights.length > 0 ? (
                                 <div className="space-y-2">
-                                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-200">
-                                    핵심 하이라이트
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-200">
+                                    Key Highlights
                                   </span>
                                   <ul className="space-y-2">
                                     {node.synthesizer.highlights.map(
                                       (highlight, idx) => (
                                         <li
                                           key={`${highlight.title}-${idx}`}
-                                          className="rounded-lg border border-indigo-200 bg-white/70 px-3 py-2 text-sm text-indigo-800 dark:border-indigo-500 dark:bg-indigo-900/50 dark:text-indigo-100"
+                                          className="space-y-1"
                                         >
-                                          <p className="font-semibold">
+                                          <p className="font-semibold text-indigo-700 dark:text-indigo-100">
                                             {highlight.title}
                                           </p>
-                                          <p className="whitespace-pre-wrap text-sm leading-snug">
+                                          <p className="whitespace-pre-wrap text-sm text-indigo-800 dark:text-indigo-100">
                                             {highlight.detail}
                                           </p>
                                         </li>
@@ -1144,16 +1556,16 @@ export default function Home() {
                               ) : null}
 
                               {node.synthesizer.followUp ? (
-                                <div className="rounded-lg border border-indigo-200 bg-white/70 px-3 py-2 text-sm text-indigo-800 dark:border-indigo-500 dark:bg-indigo-900/60 dark:text-indigo-100">
-                                  <span className="font-semibold uppercase tracking-wide">
-                                    Follow-up 질문
+                                <div className="space-y-1">
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+                                    Follow-up Question
                                   </span>
-                                  <p className="mt-1 whitespace-pre-wrap leading-snug">
+                                  <p className="whitespace-pre-wrap text-sm text-indigo-800 dark:text-indigo-100">
                                     {node.synthesizer.followUp}
                                   </p>
                                 </div>
                               ) : null}
-                            </div>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1185,69 +1597,82 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 bg-white px-6 py-16 font-sans text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold">Researcher Agent Playground</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Paste a conversation transcript and follow each stage of the research
-          pipeline as it unfolds horizontally.
-        </p>
-      </header>
+    <>
+      <DotGrid
+        dotSize={2}
+        gap={15}
+        baseColor="#3b2593"
+        activeColor="#29253c"
+        proximity={120}
+        shockRadius={250}
+        shockStrength={5}
+        resistance={750}
+        returnDuration={1.5}
+      />
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 bg-transparent px-6 py-16 font-sans text-zinc-900 dark:text-zinc-50">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold">Reasoning Researcher Agent</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Paste a conversation transcript and follow each stage of the
+            research pipeline as it unfolds horizontally.
+          </p>
+        </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <nav className="flex flex-wrap items-center gap-2">
-          {stages.map((stage) => (
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <nav className="flex flex-wrap items-center gap-2">
+            {focusStages.map((stage) => (
+              <button
+                key={stage.id}
+                type="button"
+                onClick={() => {
+                  setViewMode("focus");
+                  setSelectedStageId(stage.id);
+                }}
+                aria-pressed={highlightedStageId === stage.id}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition",
+                  highlightedStageId === stage.id
+                    ? "border-indigo-500 bg-indigo-100 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100"
+                    : "border-zinc-200 bg-white/60 text-zinc-500 hover:border-indigo-200 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
+                )}
+              >
+                {stage.title}
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white p-1 text-xs font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <button
-              key={stage.id}
               type="button"
-              onClick={() => {
-                setViewMode("focus");
-                setSelectedStageId(stage.id);
-              }}
-              aria-pressed={highlightedStageId === stage.id}
+              onClick={() => setViewMode("focus")}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition",
-                highlightedStageId === stage.id
-                  ? "border-indigo-500 bg-indigo-100 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100"
-                  : "border-zinc-200 bg-white/60 text-zinc-500 hover:border-indigo-200 hover:text-indigo-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-indigo-500 dark:hover:text-indigo-200"
+                "rounded-full px-3 py-1 transition",
+                viewMode === "focus"
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
               )}
             >
-              {stage.title}
+              Focus
             </button>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white p-1 text-xs font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-          <button
-            type="button"
-            onClick={() => setViewMode("focus")}
-            className={cn(
-              "rounded-full px-3 py-1 transition",
-              viewMode === "focus"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            )}
-          >
-            Focus
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedStageId(null);
-              setViewMode("timeline");
-            }}
-            className={cn(
-              "rounded-full px-3 py-1 transition",
-              viewMode === "timeline"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            )}
-          >
-            Timeline
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedStageId(null);
+                setViewMode("timeline");
+              }}
+              className={cn(
+                "rounded-full px-3 py-1 transition",
+                viewMode === "timeline"
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              )}
+            >
+              Timeline
+            </button>
+          </div>
         </div>
-      </div>
 
-      {viewMode === "timeline" ? renderTimelineView() : renderFocusView()}
-    </main>
+        {viewMode === "timeline" ? renderTimelineView() : renderFocusView()}
+      </main>
+    </>
   );
 }

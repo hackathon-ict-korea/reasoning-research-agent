@@ -1,6 +1,9 @@
 import { generateText } from "ai";
 
-import { defaultGoogleProviderOptions, geminiFlash } from "../clients/google";
+import {
+  defaultGoogleProviderOptions,
+  geminiFlash,
+} from "../../app/clients/google";
 import {
   getSynthesizerClarifierPrompt,
   getSynthesizerPrompt,
@@ -17,6 +20,7 @@ type ProviderOptions = NonNullable<
 export type SynthesizerAgentArgs = {
   conversation: string;
   researcherResponses: ResearcherSynthesisInput[];
+  cycle?: number;
   providerOptions?: ProviderOptions;
 };
 
@@ -28,11 +32,13 @@ export type SynthesizerClarifierAgentArgs = {
 export async function runSynthesizerAgent({
   conversation,
   researcherResponses,
+  cycle,
   providerOptions,
 }: SynthesizerAgentArgs): Promise<SynthesizerResult> {
   const prompt = getSynthesizerPrompt(
     conversation,
-    JSON.stringify(researcherResponses, null, 2)
+    JSON.stringify(researcherResponses, null, 2),
+    { cycle }
   );
 
   const mergedProviderOptions = mergeProviderOptions(
@@ -95,13 +101,6 @@ function parseSynthesizerResponse(rawText: string): SynthesizerResult {
     throw new Error("`summary` must be a string.");
   }
 
-  if (
-    payload.mediatorNotes !== null &&
-    typeof payload.mediatorNotes !== "string"
-  ) {
-    throw new Error("`mediatorNotes` must be a string or null.");
-  }
-
   const highlights = Array.isArray(payload.highlights)
     ? payload.highlights.map((entry, index) => {
         if (
@@ -129,8 +128,6 @@ function parseSynthesizerResponse(rawText: string): SynthesizerResult {
 
   return {
     summary: payload.summary,
-    mediatorNotes:
-      payload.mediatorNotes === null ? undefined : payload.mediatorNotes,
     highlights,
     followUpQuestion: payload.followUpQuestion ?? "",
     rawText: typeof payload.rawText === "string" ? payload.rawText : rawText,
@@ -151,7 +148,6 @@ function normalizeJsonFence(input: string): string {
 
 type SynthesizerPayload = {
   summary: unknown;
-  mediatorNotes: unknown;
   highlights: unknown;
   followUpQuestion: unknown;
   rawText?: unknown;
