@@ -675,8 +675,8 @@ export default function Home() {
           <div>
             <h2 className="text-xl font-semibold">
               {isFollowUpCycle
-                ? `Cycle ${cycleNumber} — Follow-up Analysis`
-                : "Cycle 1 — Primary Analysis"}
+                ? `Follow-up Analysis`
+                : "Primary Analysis"}
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Compare researcher responses and Synthesizer summaries in one
