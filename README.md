@@ -105,7 +105,6 @@ npm run dev
 reasoning-research-agent/
 ├── app/                          # Next.js App Router
 │   ├── api/                      # API routes
-│   │   ├── chat/                 # Chat endpoint (streaming)
 │   │   ├── researchers/          # Multi-agent research endpoint
 │   │   ├── summarize/            # Conversation summarization
 │   │   └── synthesizer/          # Synthesis & clarification
@@ -240,10 +239,6 @@ Normalizes and summarizes user input before research begins.
   ]
 }
 ```
-
-### POST `/api/chat`
-
-Standard streaming chat interface endpoint.
 
 ## How It Works
 
