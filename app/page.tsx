@@ -39,9 +39,9 @@ const RESEARCHER_COLORS: Record<
   },
   researcherA: {
     bg: "bg-rose-50 dark:bg-rose-900/30",
-    border: "border-rose-200 dark:border-rose-700",
-    text: "text-rose-900 dark:text-rose-100",
-    label: "text-rose-500 dark:text-rose-400",
+    border: "border-rose-200 dark:border-pink-700",
+    text: "text-rose-900 dark:text-pink-100",
+    label: "text-rose-500 dark:text-pink-400",
   },
   researcherB: {
     bg: "bg-sky-50 dark:bg-sky-900/30",
