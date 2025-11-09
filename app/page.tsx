@@ -25,6 +25,72 @@ const STATUS_LABELS = {
   error: "Error",
 } as const;
 
+// 리뷰어별 파스텔 컬러 매핑
+const RESEARCHER_COLORS: Record<
+  string,
+  { bg: string; border: string; text: string; label: string }
+> = {
+  default: {
+    bg: "bg-slate-50 dark:bg-slate-900/60",
+    border: "border-slate-200 dark:border-slate-700",
+    text: "text-slate-700 dark:text-slate-100",
+    label: "text-slate-500 dark:text-slate-400",
+  },
+  researcherA: {
+    bg: "bg-rose-50 dark:bg-rose-900/30",
+    border: "border-rose-200 dark:border-rose-700",
+    text: "text-rose-900 dark:text-rose-100",
+    label: "text-rose-500 dark:text-rose-400",
+  },
+  researcherB: {
+    bg: "bg-sky-50 dark:bg-sky-900/30",
+    border: "border-sky-200 dark:border-sky-700",
+    text: "text-sky-900 dark:text-sky-100",
+    label: "text-sky-500 dark:text-sky-400",
+  },
+  researcherC: {
+    bg: "bg-emerald-50 dark:bg-emerald-900/30",
+    border: "border-emerald-200 dark:border-emerald-700",
+    text: "text-emerald-900 dark:text-emerald-100",
+    label: "text-emerald-500 dark:text-emerald-400",
+  },
+  researcherD: {
+    bg: "bg-purple-50 dark:bg-purple-900/30",
+    border: "border-purple-200 dark:border-purple-700",
+    text: "text-purple-900 dark:text-purple-100",
+    label: "text-purple-500 dark:text-purple-400",
+  },
+  researcherE: {
+    bg: "bg-amber-50 dark:bg-amber-900/30",
+    border: "border-amber-200 dark:border-amber-700",
+    text: "text-amber-900 dark:text-amber-100",
+    label: "text-amber-500 dark:text-amber-400",
+  },
+  researcherF: {
+    bg: "bg-teal-50 dark:bg-teal-900/30",
+    border: "border-teal-200 dark:border-teal-700",
+    text: "text-teal-900 dark:text-teal-100",
+    label: "text-teal-500 dark:text-teal-400",
+  },
+  researcherG: {
+    bg: "bg-pink-50 dark:bg-pink-900/30",
+    border: "border-pink-200 dark:border-pink-700",
+    text: "text-pink-900 dark:text-pink-100",
+    label: "text-pink-500 dark:text-pink-400",
+  },
+  researcherH: {
+    bg: "bg-cyan-50 dark:bg-cyan-900/30",
+    border: "border-cyan-200 dark:border-cyan-700",
+    text: "text-cyan-900 dark:text-cyan-100",
+    label: "text-cyan-500 dark:text-cyan-400",
+  },
+};
+
+// 리뷰어 ID로 색상 가져오기
+function getResearcherColors(researcherId: string) {
+  return RESEARCHER_COLORS[researcherId] || RESEARCHER_COLORS.default;
+}
+
 type TimelineStatus = keyof typeof STATUS_LABELS;
 
 type TimelineResponse = {
@@ -616,33 +682,64 @@ export default function Home() {
               Collecting researcher responses…
             </div>
           ) : null}
-          {cycleEntries.map((entry) => {
+          {cycleEntries.map((entry, entryIndex) => {
             const label =
               entry.phase === "initial"
                 ? `InitialResponse#${entry.phasePosition}`
                 : `FeedbackResponse#${entry.phasePosition}`;
 
+            const researcherId =
+              entry.status === "fulfilled"
+                ? entry.result.researcherId
+                : entry.researcherId;
+            const colors = getResearcherColors(researcherId);
+
             return entry.status === "fulfilled" ? (
               <article
                 key={`${entry.cycle}-${entry.result.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="flex h-full flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                className={cn(
+                  "flex h-full flex-col justify-between rounded-xl border p-5 shadow-sm animate-fadeInSlide transition-all",
+                  colors.border,
+                  colors.bg
+                )}
+                style={{
+                  animationDelay: `${entryIndex * 150}ms`,
+                }}
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">
+                    <span
+                      className={cn(
+                        "text-xs font-medium uppercase",
+                        colors.label
+                      )}
+                    >
                       {label}
                     </span>
                     <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                      <span
+                        className={cn(
+                          "text-[11px] font-semibold uppercase tracking-wide",
+                          colors.label
+                        )}
+                      >
                         Cycle {entry.cycle}
                       </span>
-                      <h3 className="text-lg font-semibold capitalize">
+                      <h3
+                        className={cn(
+                          "text-lg font-bold capitalize",
+                          colors.label
+                        )}
+                      >
                         {entry.result.researcherId}
                       </h3>
                     </div>
                   </div>
                   <p
-                    className="mt-4 text-sm leading-6 text-zinc-800 dark:text-zinc-200 whitespace-break-spaces"
+                    className={cn(
+                      "mt-4 text-sm leading-6 whitespace-break-spaces",
+                      colors.text
+                    )}
                     dangerouslySetInnerHTML={{
                       __html: parseMarkdown(entry.result.answer),
                     }}
@@ -652,14 +749,17 @@ export default function Home() {
             ) : (
               <article
                 key={`${entry.cycle}-${entry.researcherId}-${entry.phase}-${entry.phasePosition}`}
-                className="rounded-xl border border-amber-300 bg-amber-50 p-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200 animate-fadeInSlide"
+                style={{
+                  animationDelay: `${entryIndex * 150}ms`,
+                }}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase text-amber-600 dark:text-amber-300">
+                  <span className="text-xs font-medium uppercase text-red-600 dark:text-red-300">
                     {label}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-500 dark:text-amber-300/80">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-red-500 dark:text-red-300/80">
                       Cycle {entry.cycle}
                     </span>
                     <h3 className="text-lg font-semibold capitalize">
